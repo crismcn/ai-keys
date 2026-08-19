@@ -1,0 +1,5 @@
+# SMTP 授权码等敏感配置,禁止提交
+.claude/hooks/email.config.json
+
+# hooks 依赖
+.claude/hooks/node_modules/
