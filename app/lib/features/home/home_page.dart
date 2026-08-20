@@ -1,174 +1,378 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
-import '../../core/design_system/app_tokens.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/stat_card.dart';
-import '../../core/design_system/widgets/theme_mode_button.dart';
-import '../../core/providers/email_accounts_provider.dart';
+import '../../core/l10n/app_strings.dart';
+import '../../core/models/email_account.dart';
+import '../../core/state/email_store.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/tokens/app_tokens.dart';
+import '../../widgets/buttons.dart';
+import '../../widgets/section_card.dart';
+import '../activation/activation_detail_page.dart';
 import '../import_email/import_email_page.dart';
-import 'widgets/email_list_section.dart';
+import 'widgets/email_list_item.dart';
+import 'widgets/stat_card.dart';
 
-/// APP 首页：统计卡 + 邮箱列表 + 导入入口。
-class HomePage extends ConsumerStatefulWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
-  static const String route = '/';
-
   @override
-  ConsumerState<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends ConsumerState<HomePage> with TickerProviderStateMixin {
-  /// 首页登场编排：统计卡先起，列表区稍晚跟进。
-  /// 用 AnimationController（可随组件 dispose，测试无残留 Timer）。
-  late final AnimationController _entrance = AnimationController(
-    vsync: this,
-    duration: AppMotion.choreo,
-  )..forward();
+class _HomePageState extends State<HomePage> {
+  static const _pageSize = 12;
 
-  int get _total => ref.watch(emailAccountsProvider).length;
-  int get _activated => ref.watch(activatedCountProvider);
+  final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
+  String _query = '';
+  int _visibleCount = _pageSize;
+  bool _loadingMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
-    _entrance.dispose();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) _loadMore();
+  }
+
+  int get _filteredLength =>
+      context.read<EmailStore>().search(_query).length;
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || _visibleCount >= _filteredLength) return;
+    setState(() => _loadingMore = true);
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (!mounted) return;
+    setState(() {
+      _visibleCount = (_visibleCount + _pageSize).clamp(0, _filteredLength);
+      _loadingMore = false;
+    });
+  }
+
+  Future<void> _refresh() async {
+    await context.read<EmailStore>().load();
+    if (!mounted) return;
+    setState(() => _visibleCount = _pageSize);
+  }
+
+  void _openImport() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ImportEmailPage()),
+    );
+  }
+
+  Future<void> _copyAccount(EmailAccount account) async {
+    await Clipboard.setData(
+      ClipboardData(text: context.s.copyAccountText(account.accountName, account.password)),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(context.s.copied),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
+  void _openActivation(EmailAccount account) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ActivationDetailPage(account: account)),
+    );
+  }
+  // _HANDLERS_
+
+  Future<bool> _confirmDelete(EmailAccount account) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.s.confirmDeleteTitle),
+        content: Text(context.s.confirmDeleteBody(account.accountName)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(context.s.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: Text(context.s.delete),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
-    final total = _total;
-    final activated = _activated;
-    final pending = total - activated;
+    final store = context.watch<EmailStore>();
+    final list = store.search(_query);
+    final visible = list.take(_visibleCount).toList();
 
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.max, // 标题占满可用宽，文字可截断，防 130% 溢出
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                gradient: AppColors.brand,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: AppGlow.of(
-                  AppColors.indigo,
-                  blur: 10,
-                  alpha: 0.4,
-                ),
-              ),
-              child: const Icon(Icons.bolt_rounded, size: 16, color: onNeon),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            const Flexible(
-              child: Text(
-                'AI Keys',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          const ThemeModeButton(),
-          Padding(
-            padding: const EdgeInsets.only(right: AppSpacing.md),
-            child: Center(
-              child: AppButton(
-                label: '导入邮箱',
-                icon: Icons.add_rounded,
-                // 描边：一个屏幕一个高反差主操作（「激活」），导入降级。
-                variant: AppButtonVariant.outline,
-                size: AppButtonSize.sm,
-                onPressed: () => context.push(ImportEmailPage.route),
-              ),
-            ),
-          ),
-        ],
-      ),
+      backgroundColor: context.c.bg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // 待激活缺口高亮：让一号动作「激活」可见（Zeigarnik）。
-              _FadeRiseIn(
-                controller: _entrance,
-                start: 0,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: StatCard(
-                        label: '邮箱数量',
-                        value: '$total',
-                        icon: Icons.mail_outline_rounded,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: StatCard(
-                        label: pending > 0 ? '待激活' : '已用数量',
-                        value: pending > 0 ? '$pending' : '$activated',
-                        icon: Icons.bolt_rounded,
-                        accent:
-                            pending > 0 ? AppColors.warning : AppColors.success,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              // 邮箱列表
-              Expanded(
-                child: _FadeRiseIn(
-                  controller: _entrance,
-                  start: 0.2,
-                  child: const EmailListSection(),
-                ),
-              ),
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          color: AppColors.primary,
+          child: CustomScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(child: _header()),
+              SliverToBoxAdapter(child: _stats(store)),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
+              SliverToBoxAdapter(child: _listSection(store, list, visible)),
+              const SliverToBoxAdapter(child: SizedBox(height: AppSpacing.lg)),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-/// 首页登场编排片断：淡入 + 8px 上滑，强调减速。
-/// [start] 为进场起点（0 先起，0.2 延迟一段）。
-class _FadeRiseIn extends StatelessWidget {
-  const _FadeRiseIn({
-    required this.controller,
-    required this.start,
-    required this.child,
-  });
-
-  final AnimationController controller;
-  final double start;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) return child;
-    final anim = CurvedAnimation(
-      parent: controller,
-      curve: Interval(start, 1.0, curve: AppMotion.enterCurve),
+  Widget _header() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AI Keys',
+                  style: TextStyle(
+                    fontSize: 25,
+                    fontWeight: FontWeight.w700,
+                    color: context.c.textPrimary,
+                    height: 1.1,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  context.s.appSubtitle,
+                  style: TextStyle(fontSize: 13, color: context.c.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          SoftPillButton(
+            label: context.s.importEmail,
+            icon: Icons.file_download_outlined,
+            onPressed: _openImport,
+          ),
+        ],
+      ),
     );
-    // 只用 FadeTransition + Transform.translate（纯绘制变换，不动布局，
-    // 免去 SlideTransition 在真实路由上下文破坏子树的坑）。
-    return FadeTransition(
-      opacity: anim,
-      child: AnimatedBuilder(
-        animation: anim,
-        child: child,
-        builder: (context, child) => Transform.translate(
-          offset: Offset(0, (1 - anim.value) * AppMotion.riseOffset),
-          child: child,
+  }
+
+  Widget _stats(EmailStore store) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      child: Row(
+        children: [
+          Expanded(
+            child: StatCard(
+              title: context.s.statEmailCount,
+              value: '${store.total}',
+              caption: context.s.statTotal,
+              icon: Icons.mail_outline_rounded,
+              iconColor: AppColors.primary,
+              iconBg: context.c.primarySoft,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: StatCard(
+              title: context.s.statActivated,
+              value: '${store.available}',
+              caption: context.s.statAvailable,
+              icon: Icons.check_circle_outline_rounded,
+              iconColor: AppColors.success,
+              iconBg: context.c.successSoft,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  // _LIST_
+
+  Widget _listSection(
+      EmailStore store, List<EmailAccount> list, List<EmailAccount> visible) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      child: SectionCard(
+        padding: const EdgeInsets.fromLTRB(0, AppSpacing.lg, 0, AppSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: Text(
+                context.s.emailListTitle,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: context.c.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              child: _searchField(),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            if (list.isEmpty)
+              _emptyState()
+            else
+              ...List.generate(
+                  visible.length, (i) => _dismissibleItem(store, visible[i], i)),
+            const SizedBox(height: AppSpacing.sm),
+            _footer(store, list, visible),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _searchField() {
+    return TextField(
+      controller: _searchController,
+      onChanged: (v) => setState(() {
+        _query = v;
+        _visibleCount = _pageSize;
+      }),
+      style: TextStyle(fontSize: 14, color: context.c.textPrimary),
+      decoration: InputDecoration(
+        hintText: context.s.searchHint,
+        hintStyle: TextStyle(color: context.c.textSecondary, fontSize: 14),
+        prefixIcon: Icon(Icons.search_rounded,
+            color: context.c.textSecondary, size: 20),
+        filled: true,
+        fillColor: context.c.bg,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadius.field),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
+  Widget _dismissibleItem(EmailStore store, EmailAccount account, int index) {
+    return Column(
+      children: [
+        if (index > 0)
+          Divider(
+              height: 1,
+              thickness: 1,
+              color: context.c.border,
+              indent: 72,
+              endIndent: 16),
+        Dismissible(
+          key: ValueKey(account.email),
+          direction: DismissDirection.endToStart,
+          confirmDismiss: (_) => _confirmDelete(account),
+          onDismissed: (_) => store.remove(account),
+          background: Container(
+            alignment: Alignment.centerRight,
+            color: AppColors.danger,
+            padding: const EdgeInsets.only(right: 24),
+            child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+          ),
+          child: EmailListItem(
+            account: account,
+            colorIndex: index,
+            onTap: () => _copyAccount(account),
+            onActivate: () => _openActivation(account),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _footer(
+      EmailStore store, List<EmailAccount> list, List<EmailAccount> visible) {
+    if (_loadingMore) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: context.c.neutral),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              context.s.loadingMore,
+              style: TextStyle(fontSize: 12, color: context.c.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
+    final allShown = visible.length >= list.length;
+    return Column(
+      children: [
+        if (allShown && list.length > _pageSize)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              context.s.noMore,
+              style: TextStyle(fontSize: 12, color: context.c.neutral),
+            ),
+          ),
+        Center(
+          child: Text(
+            context.s.emailCount(store.total),
+            style: TextStyle(fontSize: 12, color: context.c.textSecondary),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _emptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+      child: Column(
+        children: [
+          Icon(Icons.inbox_outlined,
+              size: 44, color: context.c.neutral.withValues(alpha: 0.7)),
+          const SizedBox(height: AppSpacing.md),
+          Text(
+            _query.isEmpty ? context.s.emptyNoEmails : context.s.emptyNoMatch,
+            style: TextStyle(color: context.c.textSecondary, fontSize: 14),
+          ),
+        ],
       ),
     );
   }

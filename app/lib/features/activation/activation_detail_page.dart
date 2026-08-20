@@ -1,425 +1,568 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
-import '../../core/design_system/app_tokens.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/app_card.dart';
-import '../../core/design_system/widgets/status_badge.dart';
-import '../../core/design_system/widgets/step_indicator.dart';
-import '../../core/providers/email_accounts_provider.dart';
+import '../../core/l10n/app_strings.dart';
+import '../../core/models/email_account.dart';
+import '../../core/state/email_store.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/tokens/app_tokens.dart';
+import '../../widgets/avatar.dart';
+import '../../widgets/section_card.dart';
+import 'activation_webview_page.dart';
 
-/// 激活详情页。
-///
-/// 进入即自动开始激活，用步骤条展示当前所处阶段，无需人工干预。
-///
-/// TODO(逻辑接入)：当前进度为本地模拟（定时器逐步骤推进）；
-/// 真实逻辑接入后端 HTTP 控制层（发送验证码 → 收取验证码 → 脚本注册 → 激活认证），
-/// 页面结构与状态机保持不变，只需替换数据来源。
-class ActivationDetailPage extends ConsumerStatefulWidget {
-  const ActivationDetailPage({super.key, required this.email});
+class _Step {
+  const _Step(this.title, this.hint, this.doneHint, this.icon);
+  final String title;
+  final String hint;
+  final String doneHint;
+  final IconData icon;
+}
 
-  final String email;
+class ActivationDetailPage extends StatefulWidget {
+  const ActivationDetailPage({super.key, required this.account});
 
-  static const String route = '/activation/:email';
-  static String pathOf(String email) => '/activation/$email';
+  final EmailAccount account;
 
   @override
-  ConsumerState<ActivationDetailPage> createState() =>
-      _ActivationDetailPageState();
+  State<ActivationDetailPage> createState() => _ActivationDetailPageState();
 }
 
-class _ActivationStep {
-  const _ActivationStep(this.label, this.description);
-
-  final String label;
-  final String description;
-}
-
-class _ActivationDetailPageState
-    extends ConsumerState<ActivationDetailPage> {
-  static const List<_ActivationStep> _steps = [
-    _ActivationStep('发送验证码', '向邮箱发送 6 位验证码'),
-    _ActivationStep('收取验证码', '轮询收件箱并提取验证码'),
-    _ActivationStep('脚本注册', '提交账号完成注册'),
-    _ActivationStep('激活认证', '点击认证链接完成激活'),
-  ];
-
-  /// 正在执行的步骤下标；等于 _steps.length 表示全部完成。
-  int _currentStep = 0;
-  bool _finished = false;
+class _ActivationDetailPageState extends State<ActivationDetailPage>
+    with SingleTickerProviderStateMixin {
   Timer? _timer;
-  final List<({int step, DateTime time})> _logs = [];
+  int _current = 0; // index of the active step
+  int _elapsed = 0; // seconds elapsed on current step
+  bool _done = false;
+  String? _authLink; // auth link revealed when step 4 (index 3) is reached
+
+  late final AnimationController _confetti;
+
+  static const _stepDuration = 3; // seconds per step (simulated)
+
+  List<_Step> get _steps => [
+        _Step(context.s.step1Title, context.s.step1Hint, context.s.step1Done,
+            Icons.send_rounded),
+        _Step(context.s.step2Title, context.s.step2Hint, context.s.step2Done,
+            Icons.mark_email_read_outlined),
+        _Step(context.s.step3Title, context.s.step3Hint, context.s.step3Done,
+            Icons.terminal_rounded),
+        _Step(context.s.step4Title, context.s.step4Hint, context.s.step4Done,
+            Icons.verified_user_outlined),
+      ];
 
   @override
   void initState() {
     super.initState();
-    _simulate();
+    _confetti = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _timer = Timer.periodic(const Duration(seconds: 1), _tick);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _confetti.dispose();
     super.dispose();
   }
 
-  /// 模拟激活流程：每 1.6s 推进一个步骤。
-  /// TODO(逻辑接入)：替换为真实激活流程的异步状态流。
-  void _simulate() {
-    _timer = Timer.periodic(const Duration(milliseconds: 1600), (timer) {
-      setState(() {
-        _logs.add((step: _currentStep, time: DateTime.now()));
-        _currentStep++;
-        if (_currentStep >= _steps.length) {
-          _finished = true;
+  void _tick(Timer timer) {
+    setState(() {
+      _elapsed++;
+      if (_elapsed >= _stepDuration) {
+        _elapsed = 0;
+        if (_current < _steps.length - 1) {
+          _current++;
+          // Reaching the last step ("激活认证阶段") yields the auth link.
+          if (_current == _steps.length - 1) {
+            _authLink = _buildAuthLink();
+          }
+        } else {
+          _done = true;
           timer.cancel();
-          // 完成时刻：轻触感 = 完成确认（≤300ms，调低音量）。
-          HapticFeedback.mediumImpact();
-          // 激活成功后标记为可用（首页绿点区分）。
-          ref.read(emailAccountsProvider.notifier).markActivated(widget.email);
+          context.read<EmailStore>().markActivated(widget.account);
+          _confetti.forward(from: 0); // celebrate step 4 success
         }
-      });
+      }
     });
   }
 
+  /// Builds the activation auth link for this account.
+  ///
+  /// The real link will come from the activation backend; until that exists we
+  /// derive a stable, well-formed placeholder from the account so the flow and
+  /// the in-app webview can be exercised end to end.
+  String _buildAuthLink() {
+    final account = widget.account;
+    final token = account.refreshToken.isNotEmpty
+        ? account.refreshToken
+        : account.email.hashCode.toRadixString(16);
+    final params = <String, String>{
+      'email': account.email,
+      'token': token,
+    };
+    return Uri.https('example.com', '/activate', params).toString();
+  }
+
+  void _openAuthLink() {
+    final url = _authLink;
+    if (url == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ActivationWebViewPage(url: url)),
+    );
+  }
+
+  String _fmt(int seconds) {
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+  // _BODY_
+
   @override
   Widget build(BuildContext context) {
-    final accounts = ref.watch(emailAccountsProvider);
-    final account =
-        accounts.where((e) => e.email == widget.email).firstOrNull;
-    final isLight = Theme.of(context).brightness == Brightness.light;
-    final fg = isLight ? AppColors.foreground : AppColors.foregroundDark;
-    final mutedFg = isLight ? AppColors.mutedForeground : AppColors.mutedForegroundDark;
-
+    final account = widget.account;
     return Scaffold(
-      appBar: AppBar(title: const Text('激活详情')),
+      backgroundColor: context.c.bg,
+      appBar: AppBar(title: Text(context.s.activationTitle)),
       body: SafeArea(
-        child: account == null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.search_off_rounded,
-                        size: 40,
-                        color: AppColors.mutedForeground,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Text(
-                        '未找到该账号',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: fg,
-                        ),
-                      ),
-                    ],
+        top: false,
+        child: Stack(
+          children: [
+            ListView(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              children: [
+                _accountCard(account),
+                const SizedBox(height: AppSpacing.lg),
+                _timelineCard(),
+                if (_authLink != null) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  _authLinkCard(),
+                ],
+                const SizedBox(height: AppSpacing.lg),
+                _warningBanner(),
+              ],
+            ),
+            if (_done)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedBuilder(
+                    animation: _confetti,
+                    builder: (context, _) => CustomPaint(
+                      painter: _ConfettiPainter(_confetti.value),
+                    ),
                   ),
                 ),
-              )
-            : ListView(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                children: [
-                  _accountHeader(context, account.account, account.activated),
-                  const SizedBox(height: AppSpacing.md),
-                  // 步骤条
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              '激活进度',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: fg,
-                              ),
-                            ),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.xs,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isLight
-                                    ? AppColors.warning.withValues(alpha: 0.12)
-                                    : AppColors.warning.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(AppRadius.pill),
-                              ),
-                              child: const Text(
-                                '模拟',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.warning,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        StepIndicator(
-                          labels: [for (final s in _steps) s.label],
-                          currentStep: _finished ? _steps.length : _currentStep,
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        // 当前步骤描述
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: _finished
-                              ? Row(
-                                  key: const ValueKey('done'),
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.check_circle_rounded,
-                                      size: 16,
-                                      color: AppColors.success,
-                                    ),
-                                    const SizedBox(width: AppSpacing.xxs),
-                                    Text(
-                                      '全部步骤已完成',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                        color: AppColors.success,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : Row(
-                                  key: ValueKey('step-$_currentStep'),
-                                  children: [
-                                    const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: AppColors.primary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: AppSpacing.xs),
-                                    Expanded(
-                                      child: Text(
-                                        '${_steps[_currentStep].label} · ${_steps[_currentStep].description}',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: fg,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  // 日志时间线
-                  AppCard(
-                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppSpacing.md,
-                            AppSpacing.sm,
-                            AppSpacing.md,
-                            AppSpacing.xs,
-                          ),
-                          child: Text(
-                            '运行日志',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: fg,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        if (_logs.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.all(AppSpacing.md),
-                            child: Text(
-                              '等待开始…',
-                              style: TextStyle(fontSize: 13, color: mutedFg),
-                            ),
-                          )
-                        else
-                          for (final log in _logs)
-                            _LogRow(
-                              step: log.step,
-                              label: _steps[log.step].label,
-                              time: log.time,
-                            ),
-                      ],
-                    ),
-                  ),
-                  // 完成操作
-                  if (_finished) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    AppCard(
-                      color: isLight
-                          ? AppColors.successSoft
-                          : AppColors.success.withValues(alpha: 0.1),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.verified_rounded,
-                            size: 20,
-                            color: AppColors.success,
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            child: Text(
-                              '激活成功，该账号已标记为可用',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.success,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    AppButton(
-                      label: '返回首页',
-                      icon: Icons.arrow_back_rounded,
-                      expand: true,
-                      onPressed: () => context.go('/'),
-                    ),
-                  ],
-                ],
               ),
+          ],
+        ),
       ),
     );
   }
 
-  /// 账号信息头卡。
-  Widget _accountHeader(BuildContext context, String account, bool activated) {
-    final isLight = Theme.of(context).brightness == Brightness.light;
-    final mutedFg = isLight ? AppColors.mutedForeground : AppColors.mutedForegroundDark;
-
-    return AppCard(
+  Widget _accountCard(EmailAccount account) {
+    return SectionCard(
       child: Row(
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              gradient: activated
-                  ? AppColors.emeraldGradient
-                  : AppColors.brand,
-              shape: BoxShape.circle,
-              boxShadow: AppGlow.of(
-                activated ? AppColors.success : AppColors.indigo,
-                blur: 12,
-                alpha: isLight ? 0.35 : 0.5,
+          LetterAvatar(name: account.email, letter: account.initial, size: 48),
+          const SizedBox(width: AppSpacing.md),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                account.accountName,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: context.c.textPrimary,
+                ),
               ),
+              const SizedBox(height: 3),
+              Text(
+                account.email,
+                style: TextStyle(fontSize: 13, color: context.c.textSecondary),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timelineCard() {
+    return SectionCard(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+      child: Column(
+        children: [
+          for (var i = 0; i < _steps.length; i++)
+            _TimelineTile(
+              step: _steps[i],
+              isFirst: i == 0,
+              isLast: i == _steps.length - 1,
+              status: i < _current || (_done && i == _current)
+                  ? _TileStatus.done
+                  : i == _current
+                      ? _TileStatus.active
+                      : _TileStatus.pending,
+              timeLabel: i < _current || (_done && i == _current)
+                  ? _fmt(_stepDuration)
+                  : i == _current
+                      ? _fmt(_elapsed)
+                      : '--:--',
             ),
-            alignment: Alignment.center,
-            child: Text(
-              account.isEmpty ? '?' : account[0].toUpperCase(),
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
+        ],
+      ),
+    );
+  }
+
+  Widget _authLinkCard() {
+    return SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: context.c.primarySoft,
+                  borderRadius: BorderRadius.circular(AppRadius.button),
+                ),
+                child: const Icon(Icons.link_rounded,
+                    size: 18, color: AppColors.primary),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.s.authLinkTitle,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: context.c.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      context.s.authLinkHint,
+                      style: TextStyle(
+                          fontSize: 12, color: context.c.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          InkWell(
+            onTap: _openAuthLink,
+            borderRadius: BorderRadius.circular(AppRadius.button),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md, vertical: AppSpacing.md),
+              decoration: BoxDecoration(
+                color: context.c.primarySoft,
+                borderRadius: BorderRadius.circular(AppRadius.button),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _authLink ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w500,
+                        decoration: TextDecoration.underline,
+                        decorationColor: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  const Icon(Icons.open_in_new_rounded,
+                      size: 18, color: AppColors.primary),
+                ],
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
+        ],
+      ),
+    );
+  }
+
+  Widget _warningBanner() {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: context.c.primarySoft,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.shield_outlined, color: AppColors.primary, size: 20),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  account,
+                  context.s.warnTitle,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isLight ? AppColors.foreground : AppColors.foregroundDark,
+                    color: context.c.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
-                  widget.email,
-                  style: TextStyle(fontSize: 12, color: mutedFg),
+                  context.s.warnBody,
+                  style: TextStyle(
+                      fontSize: 12, color: context.c.textSecondary, height: 1.4),
                 ),
               ],
             ),
           ),
-          if (activated)
-            const StatusBadge.available()
-          else
-            const StatusBadge.pending(),
         ],
       ),
     );
   }
 }
+// _TILE_
 
-/// 日志行：步骤名 + 时间 + 完成标记。
-class _LogRow extends StatelessWidget {
-  const _LogRow({
+enum _TileStatus { done, active, pending }
+
+class _TimelineTile extends StatelessWidget {
+  const _TimelineTile({
     required this.step,
-    required this.label,
-    required this.time,
+    required this.status,
+    required this.timeLabel,
+    required this.isFirst,
+    required this.isLast,
   });
 
-  final int step;
-  final String label;
-  final DateTime time;
+  final _Step step;
+  final _TileStatus status;
+  final String timeLabel;
+  final bool isFirst;
+  final bool isLast;
 
   @override
   Widget build(BuildContext context) {
-    final isLight = Theme.of(context).brightness == Brightness.light;
-    final mutedFg = isLight ? AppColors.mutedForeground : AppColors.mutedForegroundDark;
-    final fg = isLight ? AppColors.foreground : AppColors.foregroundDark;
+    final isDone = status == _TileStatus.done;
+    final isActive = status == _TileStatus.active;
+    final accent = isDone
+        ? AppColors.success
+        : isActive
+            ? AppColors.primary
+            : context.c.neutral;
+    final titleColor = status == _TileStatus.pending
+        ? context.c.textSecondary
+        : context.c.textPrimary;
 
-    final hh = time.hour.toString().padLeft(2, '0');
-    final mm = time.minute.toString().padLeft(2, '0');
-    final ss = time.second.toString().padLeft(2, '0');
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.xs,
-      ),
+    return IntrinsicHeight(
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.check_circle_rounded,
-            size: 14,
-            color: step == 3 ? AppColors.success : AppColors.success.withValues(alpha: 0.7),
+          Column(
+            children: [
+              _node(context, isDone, isActive, accent),
+              Expanded(
+                child: Container(
+                  width: 2,
+                  color: isLast
+                      ? Colors.transparent
+                      : (isDone ? AppColors.success : context.c.border),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
-            child: Text(
-              '步骤 ${step + 1} · $label',
-              style: TextStyle(fontSize: 13, color: fg),
-            ),
-          ),
-          Text(
-            '$hh:$mm:$ss',
-            style: TextStyle(
-              fontSize: 11,
-              color: mutedFg,
-              fontFeatures: const [FontFeature.tabularFigures()],
+            child: Padding(
+              padding: EdgeInsets.only(top: 2, bottom: isLast ? 6 : 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        step.title,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: titleColor,
+                        ),
+                      ),
+                      Text(
+                        timeLabel,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isActive
+                              ? AppColors.primary
+                              : context.c.textSecondary,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isDone ? step.doneHint : step.hint,
+                    style: TextStyle(fontSize: 12, color: context.c.textSecondary),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _node(BuildContext context, bool isDone, bool isActive, Color accent) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: SizedBox(
+        width: 26,
+        height: 26,
+        child: isDone
+            ? Container(
+                decoration: const BoxDecoration(
+                    color: AppColors.success, shape: BoxShape.circle),
+                child: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
+              )
+            : isActive
+                ? Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Rotating loading ring around the active node.
+                      const SizedBox(
+                        width: 26,
+                        height: 26,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(AppColors.primary),
+                        ),
+                      ),
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  )
+                : Icon(step.icon, size: 18, color: context.c.neutral),
+      ),
+    );
+  }
+}
+
+/// A celebratory "party popper" confetti burst painted over the whole page
+/// when activation succeeds. [t] runs 0→1 over the animation.
+class _ConfettiPainter extends CustomPainter {
+  _ConfettiPainter(this.t) : _particles = _buildParticles();
+
+  final double t;
+  final List<_Particle> _particles;
+
+  static const _colors = [
+    AppColors.primary,
+    AppColors.success,
+    AppColors.danger,
+    Color(0xFFF59E42), // orange
+    Color(0xFF8B5CF6), // purple
+    Color(0xFFEC4899), // pink
+    Color(0xFF14B8A6), // teal
+  ];
+
+  static List<_Particle> _buildParticles() {
+    final rnd = math.Random(7);
+    return List.generate(70, (i) {
+      return _Particle(
+        // Launch angle: fan upward and outward from the two bottom corners.
+        fromLeft: i.isEven,
+        angle: -math.pi / 2 + (rnd.nextDouble() - 0.5) * (math.pi * 0.9),
+        speed: 0.7 + rnd.nextDouble() * 0.6,
+        color: _colors[i % _colors.length],
+        w: 5 + rnd.nextDouble() * 5,
+        h: 8 + rnd.nextDouble() * 8,
+        spin: (rnd.nextDouble() - 0.5) * 12,
+        wobble: rnd.nextDouble() * math.pi * 2,
+      );
+    });
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final progress = t.clamp(0.0, 1.0);
+    if (progress == 0) return;
+    final ease = Curves.easeOut.transform(progress);
+    final launchDist = size.height * 0.95;
+    final gravity = size.height * 1.15;
+
+    for (final p in _particles) {
+      final originX = p.fromLeft ? size.width * 0.12 : size.width * 0.88;
+      final originY = size.height * 0.9;
+      final dist = p.speed * launchDist * ease;
+      final dx = math.cos(p.angle) * dist * (p.fromLeft ? 1 : -1) * 0.5 +
+          math.sin(p.wobble + progress * 6) * 12;
+      final dy = math.sin(p.angle) * dist + gravity * progress * progress;
+      final x = originX + dx;
+      final y = originY + dy;
+      final opacity = (1 - progress * progress).clamp(0.0, 1.0);
+
+      canvas.save();
+      canvas.translate(x, y);
+      canvas.rotate(p.wobble + p.spin * progress);
+      final paint = Paint()..color = p.color.withValues(alpha: opacity);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset.zero, width: p.w, height: p.h),
+          const Radius.circular(1.5),
+        ),
+        paint,
+      );
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ConfettiPainter old) => old.t != t;
+}
+
+class _Particle {
+  _Particle({
+    required this.fromLeft,
+    required this.angle,
+    required this.speed,
+    required this.color,
+    required this.w,
+    required this.h,
+    required this.spin,
+    required this.wobble,
+  });
+
+  final bool fromLeft;
+  final double angle;
+  final double speed;
+  final Color color;
+  final double w;
+  final double h;
+  final double spin;
+  final double wobble;
 }

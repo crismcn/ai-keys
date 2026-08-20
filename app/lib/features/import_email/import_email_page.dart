@@ -1,267 +1,289 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
-import '../../core/design_system/app_tokens.dart';
-import '../../core/design_system/widgets/app_button.dart';
-import '../../core/design_system/widgets/app_card.dart';
-import '../../core/models/email_account.dart';
-import '../../core/providers/email_accounts_provider.dart';
+import '../../core/l10n/app_strings.dart';
+import '../../core/state/email_store.dart';
+import '../../core/theme/app_palette.dart';
+import '../../core/tokens/app_tokens.dart';
+import '../../widgets/buttons.dart';
+import '../../widgets/dashed_border.dart';
+import '../../widgets/section_card.dart';
+import 'import_success_page.dart';
 
-/// 导入邮箱页：支持「导入 CSV 文件」与「粘贴文本」两种方式。
-///
-/// TODO(逻辑接入)：
-/// - CSV 文件选择（file_picker）与解析目前为占位，后续接入；
-/// - 导入结果持久化（shared_preferences）后续接入。
-class ImportEmailPage extends ConsumerStatefulWidget {
+class ImportEmailPage extends StatefulWidget {
   const ImportEmailPage({super.key});
 
-  static const String route = '/import';
-
   @override
-  ConsumerState<ImportEmailPage> createState() => _ImportEmailPageState();
+  State<ImportEmailPage> createState() => _ImportEmailPageState();
 }
 
-class _ImportEmailPageState extends ConsumerState<ImportEmailPage> {
-  final TextEditingController _controller = TextEditingController();
-  String? _csvFileName;
+class _ImportEmailPageState extends State<ImportEmailPage> {
+  final _pasteController = TextEditingController();
+  static const _maxChars = 5000;
+  String? _pickedFileName;
+  String _fileContent = '';
+  bool _importing = false;
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pasteController.dispose();
     super.dispose();
   }
 
-  /// 解析粘贴文本 → 邮箱账号列表。
-  /// 格式：`邮箱----密码----client_id----refresh_token----创建时间`，每行一个。
-  List<EmailAccount> _parse(String text) {
-    final result = <EmailAccount>[];
-    for (final raw in text.split('\n')) {
-      final line = raw.trim();
-      if (line.isEmpty) continue;
-      final parts = line.split('----').map((p) => p.trim()).toList();
-      if (parts.length < 4) continue;
-      final email = parts[0];
-      if (!email.contains('@')) continue;
-      result.add(EmailAccount(
-        email: email,
-        password: parts.length > 1 ? parts[1] : '',
-        clientId: parts.length > 2 ? parts[2] : '',
-        refreshToken: parts.length > 3 ? parts[3] : '',
-        createdAt: parts.length > 4 && parts[4].isNotEmpty
-            ? (DateTime.tryParse(parts[4]) ?? DateTime.now())
-            : DateTime.now(),
-      ));
-    }
-    return result;
+  bool get _canImport =>
+      !_importing &&
+      (_pasteController.text.trim().isNotEmpty || _fileContent.isNotEmpty);
+
+  Future<void> _pickCsv() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv', 'txt'],
+    );
+    if (result.isEmpty || result.single.path == null) return;
+    final file = File(result.single.path!);
+    final content = await file.readAsString();
+    setState(() {
+      _pickedFileName = result.single.name;
+      _fileContent = content;
+    });
   }
 
-  /// 预览统计：有效行 / 无效行。
-  (int valid, int invalid) _previewCount(String text) {
-    var valid = 0;
-    var invalid = 0;
-    for (final raw in text.split('\n')) {
-      final line = raw.trim();
-      if (line.isEmpty) continue;
-      final parts = line.split('----');
-      if (parts.length >= 4 && parts[0].trim().contains('@')) {
-        valid++;
-      } else {
-        invalid++;
-      }
-    }
-    return (valid, invalid);
+  Future<void> _import() async {
+    final store = context.read<EmailStore>();
+    final raw = [_fileContent, _pasteController.text]
+        .where((e) => e.trim().isNotEmpty)
+        .join('\n');
+    setState(() => _importing = true);
+    final result = await store.importFrom(raw);
+    if (!mounted) return;
+    setState(() => _importing = false);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => ImportSuccessPage(result: result)),
+    );
   }
-
-  void _import() {
-    final accounts = _parse(_controller.text);
-    if (accounts.isEmpty) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('没有可导入的数据，请检查格式')),
-        );
-      return;
-    }
-    ref.read(emailAccountsProvider.notifier).addAll(accounts);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('成功导入 ${accounts.length} 个邮箱')));
-    context.pop();
-  }
+  // _BODY_
 
   @override
   Widget build(BuildContext context) {
-    final isLight = Theme.of(context).brightness == Brightness.light;
-    final fg = isLight ? AppColors.foreground : AppColors.foregroundDark;
-    final mutedFg = isLight ? AppColors.mutedForeground : AppColors.mutedForegroundDark;
-
-    final text = _controller.text;
-    final (valid, invalid) = _previewCount(text);
-
     return Scaffold(
-      appBar: AppBar(title: const Text('导入邮箱')),
+      backgroundColor: context.c.bg,
+      appBar: AppBar(title: Text(context.s.importEmail)),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.md),
+        top: false,
+        child: Column(
           children: [
-            // 格式说明
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(AppSpacing.lg),
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline_rounded, size: 16, color: mutedFg),
-                      const SizedBox(width: AppSpacing.xxs),
-                      Text(
-                        '数据格式',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: fg,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  const _FormatExample(),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    '每行一个账号；密码必填，其余字段可为空。',
-                    style: TextStyle(fontSize: 12, color: mutedFg),
-                  ),
+                  _uploadSection(),
+                  const SizedBox(height: AppSpacing.xl),
+                  _pasteSection(),
+                  const SizedBox(height: AppSpacing.xl),
+                  _formatSection(),
                 ],
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
-            // 导入方式一：CSV 文件
-            AppButton(
-              label: _csvFileName ?? '导入 CSV 文件',
-              icon: Icons.upload_file_rounded,
-              variant: AppButtonVariant.outline,
-              expand: true,
-              onPressed: () {
-                // TODO(逻辑接入)：接入 file_picker 选择并解析 CSV 文件。
-                setState(() => _csvFileName = 'sample_accounts.csv（模拟）');
-                ScaffoldMessenger.of(context)
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    const SnackBar(content: Text('CSV 文件选择将在后续版本接入')),
-                  );
-              },
-            ),
-            const SizedBox(height: AppSpacing.md),
-            // 导入方式二：粘贴文本
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: Text(
-                '或直接粘贴',
-                style: TextStyle(fontSize: 12, color: mutedFg),
-              ),
-            ),
-            // 导入方式二：粘贴文本
-            AppCard(
-              padding: EdgeInsets.zero,
-              child: TextField(
-                controller: _controller,
-                maxLines: 8,
-                minLines: 5,
-                onChanged: (_) => setState(() {}),
-                style: TextStyle(
-                  fontSize: 13,
-                  color: fg,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-                decoration: InputDecoration(
-                  hintText: '邮箱----密码----client_id----refresh_token----创建时间\n\n一行一个账号，例如：\nalice2026@outlook.com----Kf9!mNp2----cid----rt----2026-08-01',
-                  hintMaxLines: 6,
-                  border: InputBorder.none,
-                  filled: false,
-                  contentPadding: const EdgeInsets.all(AppSpacing.md),
-                ),
-              ),
-            ),
-            // 实时预览
-            if (text.trim().isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Row(
-                children: [
-                  _PreviewChip(
-                    color: AppColors.success,
-                    label: '有效 $valid',
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  if (invalid > 0)
-                    _PreviewChip(
-                      color: AppColors.destructive,
-                      label: '无效 $invalid',
-                    ),
-                ],
-              ),
-            ],
-            const SizedBox(height: AppSpacing.lg),
-            // 确认导入
-            AppButton(
-              label: '确认导入',
-              icon: Icons.check_rounded,
-              expand: true,
-              onPressed: _controller.text.trim().isEmpty ? null : _import,
-            ),
+            _footer(),
           ],
         ),
       ),
     );
   }
-}
 
-/// 格式示例（等宽风格展示）。
-class _FormatExample extends StatelessWidget {
-  const _FormatExample();
-
-  @override
-  Widget build(BuildContext context) {
-    final isLight = Theme.of(context).brightness == Brightness.light;
-    final mutedFg = isLight ? AppColors.mutedForeground : AppColors.mutedForegroundDark;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: isLight ? AppColors.muted : AppColors.mutedDark,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-      ),
-      child: Text(
-        'alice2026@outlook.com----Kf9!mNp2----client_id----refresh_token----2026-08-01',
-        style: TextStyle(
-          fontSize: 12,
-          fontFamily: 'monospace',
-          color: mutedFg,
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: context.c.textPrimary,
+          ),
         ),
-      ),
+      );
+
+  Widget _uploadSection() {
+    final hasFile = _pickedFileName != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(context.s.importCsvSection),
+        GestureDetector(
+          onTap: _pickCsv,
+          child: DashedBorderBox(
+            color: hasFile ? AppColors.primary : context.c.border,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 30),
+              decoration: BoxDecoration(
+                color: hasFile
+                    ? context.c.primarySoft.withValues(alpha: 0.5)
+                    : context.c.surface,
+                borderRadius: BorderRadius.circular(AppRadius.card),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    hasFile
+                        ? Icons.description_outlined
+                        : Icons.file_upload_outlined,
+                    size: 28,
+                    color: hasFile ? AppColors.primary : context.c.textSecondary,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    hasFile ? _pickedFileName! : context.s.uploadHint,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: hasFile ? AppColors.primary : context.c.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    context.s.uploadOnlyCsv,
+                    style: TextStyle(fontSize: 12, color: context.c.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
-}
+  // _BODY2_
 
-/// 预览统计小标签。
-class _PreviewChip extends StatelessWidget {
-  const _PreviewChip({required this.color, required this.label});
+  Widget _pasteSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(context.s.pasteSection),
+        SectionCard(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.sm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              TextField(
+                controller: _pasteController,
+                onChanged: (_) => setState(() {}),
+                maxLines: 8,
+                maxLength: _maxChars,
+                buildCounter: (_,
+                        {required currentLength, required isFocused, maxLength}) =>
+                    null,
+                style: TextStyle(
+                    fontSize: 13, height: 1.5, color: context.c.textPrimary),
+                decoration: InputDecoration(
+                  hintText: context.s.pasteHint,
+                  hintStyle: TextStyle(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: context.c.textSecondary,
+                  ),
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              Text(
+                '${_pasteController.text.length}/$_maxChars',
+                style: TextStyle(fontSize: 12, color: context.c.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+  // _BODY3_
 
-  final Color color;
-  final String label;
+  Widget _formatSection() {
+    final rows = [
+      (context.s.fieldEmail, context.s.fieldEmailDesc),
+      (context.s.fieldPassword, context.s.fieldPasswordDesc),
+      (context.s.fieldClientId, context.s.fieldClientIdDesc),
+      (context.s.fieldRefreshToken, context.s.fieldRefreshTokenDesc),
+      (context.s.fieldCreatedAt, context.s.fieldCreatedAtDesc),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(context.s.formatSection),
+        SectionCard(
+          child: Column(
+            children: [
+              for (final row in rows)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 96,
+                        child: Text(
+                          row.$1,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: context.c.textPrimary,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          row.$2,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: context.c.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final isLight = Theme.of(context).brightness == Brightness.light;
+  Widget _footer() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: 2),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
+        color: context.c.bg,
+        border: Border(top: BorderSide(color: context.c.border)),
       ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: isLight ? color : color),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PrimaryButton(
+            label: _importing ? context.s.importing : context.s.importEmail,
+            onPressed: _canImport ? _import : null,
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Text.rich(
+            TextSpan(
+              text: context.s.privacyPrefix,
+              style: TextStyle(fontSize: 12, color: context.c.textSecondary),
+              children: [
+                TextSpan(
+                  text: context.s.privacyPolicy,
+                  style: const TextStyle(
+                      color: AppColors.primary, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
