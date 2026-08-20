@@ -21,12 +21,16 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+/// List filter driven by the two stat cards at the top of the home page.
+enum _HomeFilter { all, activated }
+
 class _HomePageState extends State<HomePage> {
   static const _pageSize = 12;
 
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   String _query = '';
+  _HomeFilter _filter = _HomeFilter.all;
   int _visibleCount = _pageSize;
   bool _loadingMore = false;
 
@@ -50,7 +54,24 @@ class _HomePageState extends State<HomePage> {
     if (pos.pixels >= pos.maxScrollExtent - 200) _loadMore();
   }
 
-  int get _filteredLength => context.read<EmailStore>().search(_query).length;
+  int get _filteredLength =>
+      _applyFilter(context.read<EmailStore>().search(_query)).length;
+
+  /// Applies the active stat-card filter on top of the search results.
+  List<EmailAccount> _applyFilter(List<EmailAccount> list) {
+    if (_filter == _HomeFilter.activated) {
+      return list.where((a) => a.activated).toList();
+    }
+    return list;
+  }
+
+  void _setFilter(_HomeFilter filter) {
+    if (_filter == filter) return;
+    setState(() {
+      _filter = filter;
+      _visibleCount = _pageSize;
+    });
+  }
 
   Future<void> _loadMore() async {
     if (_loadingMore || _visibleCount >= _filteredLength) return;
@@ -112,7 +133,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final store = context.watch<EmailStore>();
-    final list = store.search(_query);
+    final list = _applyFilter(store.search(_query));
     final visible = list.take(_visibleCount).toList();
 
     return Scaffold(
@@ -196,6 +217,8 @@ class _HomePageState extends State<HomePage> {
               icon: Icons.mail_outline_rounded,
               iconColor: AppColors.primary,
               iconBg: context.c.primarySoft,
+              selected: _filter == _HomeFilter.all,
+              onTap: () => _setFilter(_HomeFilter.all),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
@@ -207,6 +230,12 @@ class _HomePageState extends State<HomePage> {
               icon: Icons.check_circle_outline_rounded,
               iconColor: AppColors.success,
               iconBg: context.c.successSoft,
+              selected: _filter == _HomeFilter.activated,
+              onTap: () => _setFilter(
+                _filter == _HomeFilter.activated
+                    ? _HomeFilter.all
+                    : _HomeFilter.activated,
+              ),
             ),
           ),
         ],
@@ -387,7 +416,9 @@ class _HomePageState extends State<HomePage> {
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
-              _query.isEmpty ? context.s.emptyNoEmails : context.s.emptyNoMatch,
+              (_query.isEmpty && _filter == _HomeFilter.all)
+                  ? context.s.emptyNoEmails
+                  : context.s.emptyNoMatch,
               textAlign: TextAlign.center,
               style: TextStyle(color: context.c.textSecondary, fontSize: 14),
             ),

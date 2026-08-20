@@ -14,6 +14,8 @@ class StatCard extends StatelessWidget {
     required this.icon,
     required this.iconColor,
     required this.iconBg,
+    this.onTap,
+    this.selected = false,
   });
 
   final String title;
@@ -22,11 +24,15 @@ class StatCard extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final Color iconBg;
+  final VoidCallback? onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     return SectionCard(
       padding: const EdgeInsets.all(AppSpacing.lg),
+      onTap: onTap,
+      border: selected ? Border.all(color: iconColor, width: 1.6) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

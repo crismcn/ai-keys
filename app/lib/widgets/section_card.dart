@@ -10,11 +10,13 @@ class SectionCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.lg),
     this.onTap,
+    this.border,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final VoidCallback? onTap;
+  final BoxBorder? border;
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +26,7 @@ class SectionCard extends StatelessWidget {
         color: context.c.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
         boxShadow: context.c.cardShadow,
+        border: border,
       ),
       child: child,
     );
