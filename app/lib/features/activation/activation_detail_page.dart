@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/models/email_account.dart';
+import '../../core/services/activation_service.dart';
 import '../../core/state/email_store.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/tokens/app_tokens.dart';
@@ -15,10 +17,11 @@ import '../../widgets/section_card.dart';
 import 'activation_webview_page.dart';
 
 class _Step {
-  const _Step(this.title, this.hint, this.doneHint, this.icon);
+  const _Step(this.title, this.hint, this.doneHint, this.errorHint, this.icon);
   final String title;
   final String hint;
   final String doneHint;
+  final String errorHint;
   final IconData icon;
 }
 
@@ -32,37 +35,48 @@ class ActivationDetailPage extends StatefulWidget {
 }
 
 class _ActivationDetailPageState extends State<ActivationDetailPage> {
-  Timer? _timer;
+  Timer? _timer; // 1s ticker driving the active step's elapsed label
   int _current = 0; // index of the active step
   int _elapsed = 0; // seconds elapsed on current step
   bool _done = false;
-  String? _authLink; // auth link revealed when step 4 (index 3) is reached
+  String? _stepError; // non-null → current step failed (shows retry)
+  String? _authLink; // auth link revealed at step 4 (index 3)
 
-  static const _stepDuration = 3; // seconds per step (simulated)
+  // Cached intermediate results so a retry can resume mid-pipeline.
+  String? _messageId;
+  String? _code;
+
+  /// When the page was entered — only mails newer than this are accepted as
+  /// the verification / claim email (a retry keeps this original instant).
+  final DateTime _enteredAt = DateTime.now();
 
   List<_Step> get _steps => [
     _Step(
       context.s.step1Title,
       context.s.step1Hint,
       context.s.step1Done,
+      context.s.step1Error,
       Icons.send_rounded,
     ),
     _Step(
       context.s.step2Title,
       context.s.step2Hint,
       context.s.step2Done,
+      context.s.step2Error,
       Icons.mark_email_read_outlined,
     ),
     _Step(
       context.s.step3Title,
       context.s.step3Hint,
       context.s.step3Done,
+      context.s.step3Error,
       Icons.terminal_rounded,
     ),
     _Step(
       context.s.step4Title,
       context.s.step4Hint,
       context.s.step4Done,
+      context.s.step4Error,
       Icons.verified_user_outlined,
     ),
   ];
@@ -70,7 +84,7 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), _tick);
+    _run();
   }
 
   @override
@@ -79,38 +93,80 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
     super.dispose();
   }
 
-  void _tick(Timer timer) {
-    setState(() {
-      _elapsed++;
-      if (_elapsed >= _stepDuration) {
-        _elapsed = 0;
-        if (_current < _steps.length - 1) {
-          _current++;
-          // Reaching the last step ("激活认证阶段") yields the auth link.
-          if (_current == _steps.length - 1) {
-            _authLink = _buildAuthLink();
-          }
-        } else {
-          _done = true;
-          timer.cancel();
-          context.read<EmailStore>().markActivated(widget.account);
-        }
-      }
+  bool _isCancelled() => !mounted;
+
+  void _startTicker() {
+    _timer?.cancel();
+    _elapsed = 0;
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _elapsed++);
     });
   }
 
-  /// Builds the activation auth link for this account.
-  ///
-  /// The real link will come from the activation backend; until that exists we
-  /// derive a stable, well-formed placeholder from the account so the flow and
-  /// the in-app webview can be exercised end to end.
-  String _buildAuthLink() {
+  /// Moves to [step], clearing any error and restarting the elapsed ticker.
+  void _startStep(int step) {
+    if (!mounted) return;
+    setState(() {
+      _current = step;
+      _stepError = null;
+    });
+    _startTicker();
+  }
+
+  /// Drives the real activation pipeline (API.MD #1→#5), resuming from [from].
+  /// Each stage awaits its interface; a failure stops on that step with a
+  /// retry affordance instead of advancing.
+  Future<void> _run({int from = 0}) async {
     final account = widget.account;
-    final token = account.refreshToken.isNotEmpty
-        ? account.refreshToken
-        : account.email.hashCode.toRadixString(16);
-    final params = <String, String>{'email': account.email, 'token': token};
-    return Uri.https('example.com', '/activate', params).toString();
+    try {
+      if (from <= 0) {
+        _startStep(0);
+        await ActivationService.sendVerification(account);
+        if (!mounted) return;
+      }
+      if (from <= 1) {
+        _startStep(1);
+        final vr = await ActivationService.awaitVerificationCode(
+          account,
+          since: _enteredAt,
+          isCancelled: _isCancelled,
+        );
+        if (!mounted) return;
+        _messageId = vr.messageId;
+        _code = vr.code;
+      }
+      if (from <= 2) {
+        _startStep(2);
+        await ActivationService.register(
+          account: account,
+          messageId: _messageId!,
+          code: _code!,
+        );
+        if (!mounted) return;
+      }
+      _startStep(3);
+      final link = await ActivationService.awaitAuthLink(
+        account,
+        since: _enteredAt,
+        isCancelled: _isCancelled,
+      );
+      if (!mounted) return;
+      setState(() => _authLink = link);
+
+      _timer?.cancel();
+      setState(() => _done = true);
+      if (mounted) context.read<EmailStore>().markActivated(account);
+    } on ActivationException catch (e) {
+      if (!mounted) return;
+      _timer?.cancel();
+      setState(() => _stepError = e.message);
+    }
+  }
+
+  void _retry() {
+    if (_stepError == null) return;
+    _run(from: _current);
   }
 
   void _openAuthLink() {
@@ -119,6 +175,21 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => ActivationWebViewPage(url: url)));
+  }
+
+  void _copyAuthLink() {
+    final url = _authLink;
+    if (url == null) return;
+    Clipboard.setData(ClipboardData(text: url));
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(context.s.copied),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   String _fmt(int seconds) {
@@ -201,20 +272,23 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
               step: _steps[i],
               isFirst: i == 0,
               isLast: i == _steps.length - 1,
-              status: i < _current || (_done && i == _current)
-                  ? _TileStatus.done
-                  : i == _current
-                  ? _TileStatus.active
-                  : _TileStatus.pending,
-              timeLabel: i < _current || (_done && i == _current)
-                  ? _fmt(_stepDuration)
-                  : i == _current
+              status: _statusFor(i),
+              timeLabel: i == _current && _stepError == null && !_done
                   ? _fmt(_elapsed)
-                  : '--:--',
+                  : (_statusFor(i) == _TileStatus.done ? '' : '--:--'),
+              errorText: _statusFor(i) == _TileStatus.failed ? _stepError : null,
+              onRetry: _retry,
             ),
         ],
       ),
     );
+  }
+
+  _TileStatus _statusFor(int i) {
+    if (i == _current && _stepError != null) return _TileStatus.failed;
+    if (i < _current || (_done && i == _current)) return _TileStatus.done;
+    if (i == _current) return _TileStatus.active;
+    return _TileStatus.pending;
   }
 
   Widget _authLinkCard() {
@@ -264,43 +338,67 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
             ],
           ),
           const SizedBox(height: AppSpacing.md),
-          InkWell(
-            onTap: _openAuthLink,
-            borderRadius: BorderRadius.circular(AppRadius.button),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.md,
-              ),
-              decoration: BoxDecoration(
-                color: context.c.primarySoft,
-                borderRadius: BorderRadius.circular(AppRadius.button),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _authLink ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w500,
-                        decoration: TextDecoration.underline,
-                        decorationColor: AppColors.primary,
-                      ),
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: _openAuthLink,
+                  borderRadius: BorderRadius.circular(AppRadius.button),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.md,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.c.primarySoft,
+                      borderRadius: BorderRadius.circular(AppRadius.button),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _authLink ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w500,
+                              decoration: TextDecoration.underline,
+                              decorationColor: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        const Icon(
+                          Icons.open_in_new_rounded,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  const Icon(
-                    Icons.open_in_new_rounded,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              InkWell(
+                onTap: _copyAuthLink,
+                borderRadius: BorderRadius.circular(AppRadius.button),
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: context.c.primarySoft,
+                    borderRadius: BorderRadius.circular(AppRadius.button),
+                  ),
+                  child: const Icon(
+                    Icons.copy_rounded,
                     size: 18,
                     color: AppColors.primary,
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),
@@ -350,7 +448,7 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
 }
 // _TILE_
 
-enum _TileStatus { done, active, pending }
+enum _TileStatus { done, active, pending, failed }
 
 class _TimelineTile extends StatelessWidget {
   const _TimelineTile({
@@ -359,6 +457,8 @@ class _TimelineTile extends StatelessWidget {
     required this.timeLabel,
     required this.isFirst,
     required this.isLast,
+    this.errorText,
+    this.onRetry,
   });
 
   final _Step step;
@@ -366,15 +466,20 @@ class _TimelineTile extends StatelessWidget {
   final String timeLabel;
   final bool isFirst;
   final bool isLast;
+  final String? errorText;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final isDone = status == _TileStatus.done;
     final isActive = status == _TileStatus.active;
+    final isFailed = status == _TileStatus.failed;
     final accent = isDone
         ? AppColors.primaryLight
         : isActive
         ? AppColors.primary
+        : isFailed
+        ? AppColors.danger
         : context.c.neutral;
     final titleColor = status == _TileStatus.pending
         ? context.c.textSecondary
@@ -386,7 +491,7 @@ class _TimelineTile extends StatelessWidget {
         children: [
           Column(
             children: [
-              _node(context, isDone, isActive, accent),
+              _node(context, isDone, isActive, isFailed, accent),
               Expanded(
                 child: isLast
                     ? const SizedBox(width: 2)
@@ -430,12 +535,32 @@ class _TimelineTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    isDone ? step.doneHint : step.hint,
+                    isFailed
+                        ? (errorText ?? step.errorHint)
+                        : isDone
+                        ? step.doneHint
+                        : step.hint,
                     style: TextStyle(
                       fontSize: 12,
-                      color: context.c.textSecondary,
+                      color: isFailed ? AppColors.danger : context.c.textSecondary,
                     ),
                   ),
+                  if (isFailed && onRetry != null) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 32,
+                      child: OutlinedButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        label: Text(context.s.activationRetry),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -445,7 +570,13 @@ class _TimelineTile extends StatelessWidget {
     );
   }
 
-  Widget _node(BuildContext context, bool isDone, bool isActive, Color accent) {
+  Widget _node(
+    BuildContext context,
+    bool isDone,
+    bool isActive,
+    bool isFailed,
+    Color accent,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(top: 2),
       child: SizedBox(
@@ -459,6 +590,18 @@ class _TimelineTile extends StatelessWidget {
                 ),
                 child: const Icon(
                   Icons.check_rounded,
+                  size: 16,
+                  color: Colors.white,
+                ),
+              )
+            : isFailed
+            ? Container(
+                decoration: const BoxDecoration(
+                  color: AppColors.danger,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
                   size: 16,
                   color: Colors.white,
                 ),

@@ -100,6 +100,11 @@ class AppStrings {
   String get step4Title => '激活认证阶段';
   String get step4Hint => '等待激活认证...';
   String get step4Done => '激活认证通过';
+  String get step1Error => '发送验证码失败，请重试';
+  String get step2Error => '未能收取到验证码，请重试';
+  String get step3Error => '注册失败，请重试';
+  String get step4Error => '未获取到认证链接，请重试';
+  String get activationRetry => '重试';
   String get warnTitle => '激活过程中请勿退出页面';
   String get warnBody => '请保持网络连接稳定，激活过程可能需要 1-2 分钟';
   String get authLinkTitle => '激活认证链接';
