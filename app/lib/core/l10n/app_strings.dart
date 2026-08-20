@@ -10,7 +10,7 @@ class AppStrings {
 
   // Common
   String get appName => 'AI Mails';
-  String get appSubtitle => '管理你的邮箱与激活状态';
+  String get appSubtitle => '最懂你的邮箱批量管理工具';
   String get cancel => '取消';
   String get delete => '删除';
 
