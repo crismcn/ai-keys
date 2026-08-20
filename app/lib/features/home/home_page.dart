@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/l10n/app_strings.dart';
@@ -11,6 +10,7 @@ import '../../widgets/buttons.dart';
 import '../../widgets/section_card.dart';
 import '../activation/activation_detail_page.dart';
 import '../import_email/import_email_page.dart';
+import '../mail/mail_list_page.dart';
 import 'widgets/email_list_item.dart';
 import 'widgets/stat_card.dart';
 
@@ -76,20 +76,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _copyAccount(EmailAccount account) async {
-    await Clipboard.setData(
-      ClipboardData(text: context.s.copyAccountText(account.accountName, account.password)),
+  void _openMail(EmailAccount account) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => MailListPage(account: account)),
     );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(context.s.copied),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
   }
 
   void _openActivation(EmailAccount account) {
@@ -308,7 +298,7 @@ class _HomePageState extends State<HomePage> {
           child: EmailListItem(
             account: account,
             colorIndex: index,
-            onTap: () => _copyAccount(account),
+            onTap: () => _openMail(account),
             onActivate: () => _openActivation(account),
           ),
         ),

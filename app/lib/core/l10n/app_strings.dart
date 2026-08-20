@@ -74,6 +74,18 @@ class AppStrings {
   String get viewList => '查看邮箱列表';
   String get continueImport => '继续导入';
 
+  // Mail list
+  String get mailListTitle => '邮件列表';
+  String get mailLoading => '正在收取邮件...';
+  String get mailEmpty => '暂无邮件';
+  String get mailLoadError => '邮件加载失败，请检查网络后重试';
+  String get mailRetry => '重试';
+  String mailCount(int n) => '共 $n 封邮件';
+  // Mail detail
+  String get mailFrom => '发件人';
+  String get mailTo => '收件人';
+  String get mailNoBody => '暂无正文内容';
+
   // Activation detail
   String get activationTitle => '激活详情';
   String get step1Title => '发送验证码阶段';
