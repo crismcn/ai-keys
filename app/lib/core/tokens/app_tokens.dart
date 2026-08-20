@@ -8,6 +8,9 @@ class AppColors {
   static const success = Color(0xFF22C55E);
   static const danger = Color(0xFFEF4444);
 
+  /// Lighter blue used for completed activation steps (softer than [primary]).
+  static const primaryLight = Color.fromARGB(255, 89, 132, 250);
+
   /// Soft palette for letter avatars (cycled by index / hash) — same in both themes.
   static const avatarPalette = <(Color bg, Color fg)>[
     (Color(0xFFEAF0FF), Color(0xFF3B6EF5)), // blue

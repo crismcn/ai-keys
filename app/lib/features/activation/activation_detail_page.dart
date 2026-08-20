@@ -10,6 +10,7 @@ import '../../core/state/email_store.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/tokens/app_tokens.dart';
 import '../../widgets/avatar.dart';
+import '../../widgets/confetti.dart';
 import '../../widgets/section_card.dart';
 import 'activation_webview_page.dart';
 
@@ -30,43 +31,51 @@ class ActivationDetailPage extends StatefulWidget {
   State<ActivationDetailPage> createState() => _ActivationDetailPageState();
 }
 
-class _ActivationDetailPageState extends State<ActivationDetailPage>
-    with SingleTickerProviderStateMixin {
+class _ActivationDetailPageState extends State<ActivationDetailPage> {
   Timer? _timer;
   int _current = 0; // index of the active step
   int _elapsed = 0; // seconds elapsed on current step
   bool _done = false;
   String? _authLink; // auth link revealed when step 4 (index 3) is reached
 
-  late final AnimationController _confetti;
-
   static const _stepDuration = 3; // seconds per step (simulated)
 
   List<_Step> get _steps => [
-        _Step(context.s.step1Title, context.s.step1Hint, context.s.step1Done,
-            Icons.send_rounded),
-        _Step(context.s.step2Title, context.s.step2Hint, context.s.step2Done,
-            Icons.mark_email_read_outlined),
-        _Step(context.s.step3Title, context.s.step3Hint, context.s.step3Done,
-            Icons.terminal_rounded),
-        _Step(context.s.step4Title, context.s.step4Hint, context.s.step4Done,
-            Icons.verified_user_outlined),
-      ];
+    _Step(
+      context.s.step1Title,
+      context.s.step1Hint,
+      context.s.step1Done,
+      Icons.send_rounded,
+    ),
+    _Step(
+      context.s.step2Title,
+      context.s.step2Hint,
+      context.s.step2Done,
+      Icons.mark_email_read_outlined,
+    ),
+    _Step(
+      context.s.step3Title,
+      context.s.step3Hint,
+      context.s.step3Done,
+      Icons.terminal_rounded,
+    ),
+    _Step(
+      context.s.step4Title,
+      context.s.step4Hint,
+      context.s.step4Done,
+      Icons.verified_user_outlined,
+    ),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _confetti = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    );
     _timer = Timer.periodic(const Duration(seconds: 1), _tick);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _confetti.dispose();
     super.dispose();
   }
 
@@ -85,7 +94,6 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
           _done = true;
           timer.cancel();
           context.read<EmailStore>().markActivated(widget.account);
-          _confetti.forward(from: 0); // celebrate step 4 success
         }
       }
     });
@@ -101,19 +109,16 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
     final token = account.refreshToken.isNotEmpty
         ? account.refreshToken
         : account.email.hashCode.toRadixString(16);
-    final params = <String, String>{
-      'email': account.email,
-      'token': token,
-    };
+    final params = <String, String>{'email': account.email, 'token': token};
     return Uri.https('example.com', '/activate', params).toString();
   }
 
   void _openAuthLink() {
     final url = _authLink;
     if (url == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => ActivationWebViewPage(url: url)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => ActivationWebViewPage(url: url)));
   }
 
   String _fmt(int seconds) {
@@ -147,17 +152,7 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
                 _warningBanner(),
               ],
             ),
-            if (_done)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: AnimatedBuilder(
-                    animation: _confetti,
-                    builder: (context, _) => CustomPaint(
-                      painter: _ConfettiPainter(_confetti.value),
-                    ),
-                  ),
-                ),
-              ),
+            if (_done) const Positioned.fill(child: ConfettiOverlay()),
           ],
         ),
       ),
@@ -195,7 +190,10 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
 
   Widget _timelineCard() {
     return SectionCard(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
       child: Column(
         children: [
           for (var i = 0; i < _steps.length; i++)
@@ -206,13 +204,13 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
               status: i < _current || (_done && i == _current)
                   ? _TileStatus.done
                   : i == _current
-                      ? _TileStatus.active
-                      : _TileStatus.pending,
+                  ? _TileStatus.active
+                  : _TileStatus.pending,
               timeLabel: i < _current || (_done && i == _current)
                   ? _fmt(_stepDuration)
                   : i == _current
-                      ? _fmt(_elapsed)
-                      : '--:--',
+                  ? _fmt(_elapsed)
+                  : '--:--',
             ),
         ],
       ),
@@ -233,8 +231,11 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
                   color: context.c.primarySoft,
                   borderRadius: BorderRadius.circular(AppRadius.button),
                 ),
-                child: const Icon(Icons.link_rounded,
-                    size: 18, color: AppColors.primary),
+                child: const Icon(
+                  Icons.link_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
               ),
               const SizedBox(width: AppSpacing.md),
               Expanded(
@@ -253,7 +254,9 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
                     Text(
                       context.s.authLinkHint,
                       style: TextStyle(
-                          fontSize: 12, color: context.c.textSecondary),
+                        fontSize: 12,
+                        color: context.c.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -266,7 +269,9 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
             borderRadius: BorderRadius.circular(AppRadius.button),
             child: Container(
               padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md, vertical: AppSpacing.md),
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.md,
+              ),
               decoration: BoxDecoration(
                 color: context.c.primarySoft,
                 borderRadius: BorderRadius.circular(AppRadius.button),
@@ -288,8 +293,11 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
-                  const Icon(Icons.open_in_new_rounded,
-                      size: 18, color: AppColors.primary),
+                  const Icon(
+                    Icons.open_in_new_rounded,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
                 ],
               ),
             ),
@@ -327,7 +335,10 @@ class _ActivationDetailPageState extends State<ActivationDetailPage>
                 Text(
                   context.s.warnBody,
                   style: TextStyle(
-                      fontSize: 12, color: context.c.textSecondary, height: 1.4),
+                    fontSize: 12,
+                    color: context.c.textSecondary,
+                    height: 1.4,
+                  ),
                 ),
               ],
             ),
@@ -361,10 +372,10 @@ class _TimelineTile extends StatelessWidget {
     final isDone = status == _TileStatus.done;
     final isActive = status == _TileStatus.active;
     final accent = isDone
-        ? AppColors.success
+        ? AppColors.primaryLight
         : isActive
-            ? AppColors.primary
-            : context.c.neutral;
+        ? AppColors.primary
+        : context.c.neutral;
     final titleColor = status == _TileStatus.pending
         ? context.c.textSecondary
         : context.c.textPrimary;
@@ -377,12 +388,13 @@ class _TimelineTile extends StatelessWidget {
             children: [
               _node(context, isDone, isActive, accent),
               Expanded(
-                child: Container(
-                  width: 2,
-                  color: isLast
-                      ? Colors.transparent
-                      : (isDone ? AppColors.success : context.c.border),
-                ),
+                child: isLast
+                    ? const SizedBox(width: 2)
+                    : _DashedLine(
+                        color: isDone
+                            ? AppColors.primaryLight
+                            : context.c.border,
+                      ),
               ),
             ],
           ),
@@ -419,7 +431,10 @@ class _TimelineTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     isDone ? step.doneHint : step.hint,
-                    style: TextStyle(fontSize: 12, color: context.c.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.c.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -439,130 +454,86 @@ class _TimelineTile extends StatelessWidget {
         child: isDone
             ? Container(
                 decoration: const BoxDecoration(
-                    color: AppColors.success, shape: BoxShape.circle),
-                child: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
+                  color: AppColors.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  size: 16,
+                  color: Colors.white,
+                ),
               )
             : isActive
-                ? Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Rotating loading ring around the active node.
-                      const SizedBox(
-                        width: 26,
-                        height: 26,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.4,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(AppColors.primary),
-                        ),
+            ? Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Rotating loading ring around the active node.
+                  const SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.primary,
                       ),
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ],
-                  )
-                : Icon(step.icon, size: 18, color: context.c.neutral),
+                    ),
+                  ),
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              )
+            : Icon(step.icon, size: 18, color: context.c.neutral),
       ),
     );
   }
 }
 
-/// A celebratory "party popper" confetti burst painted over the whole page
-/// when activation succeeds. [t] runs 0→1 over the animation.
-class _ConfettiPainter extends CustomPainter {
-  _ConfettiPainter(this.t) : _particles = _buildParticles();
+/// A thin vertical dashed connector between timeline nodes.
+class _DashedLine extends StatelessWidget {
+  const _DashedLine({required this.color});
 
-  final double t;
-  final List<_Particle> _particles;
+  final Color color;
 
-  static const _colors = [
-    AppColors.primary,
-    AppColors.success,
-    AppColors.danger,
-    Color(0xFFF59E42), // orange
-    Color(0xFF8B5CF6), // purple
-    Color(0xFFEC4899), // pink
-    Color(0xFF14B8A6), // teal
-  ];
-
-  static List<_Particle> _buildParticles() {
-    final rnd = math.Random(7);
-    return List.generate(70, (i) {
-      return _Particle(
-        // Launch angle: fan upward and outward from the two bottom corners.
-        fromLeft: i.isEven,
-        angle: -math.pi / 2 + (rnd.nextDouble() - 0.5) * (math.pi * 0.9),
-        speed: 0.7 + rnd.nextDouble() * 0.6,
-        color: _colors[i % _colors.length],
-        w: 5 + rnd.nextDouble() * 5,
-        h: 8 + rnd.nextDouble() * 8,
-        spin: (rnd.nextDouble() - 0.5) * 12,
-        wobble: rnd.nextDouble() * math.pi * 2,
-      );
-    });
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 2,
+      child: CustomPaint(painter: _DashedLinePainter(color)),
+    );
   }
+}
+
+class _DashedLinePainter extends CustomPainter {
+  _DashedLinePainter(this.color);
+
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final progress = t.clamp(0.0, 1.0);
-    if (progress == 0) return;
-    final ease = Curves.easeOut.transform(progress);
-    final launchDist = size.height * 0.95;
-    final gravity = size.height * 1.15;
-
-    for (final p in _particles) {
-      final originX = p.fromLeft ? size.width * 0.12 : size.width * 0.88;
-      final originY = size.height * 0.9;
-      final dist = p.speed * launchDist * ease;
-      final dx = math.cos(p.angle) * dist * (p.fromLeft ? 1 : -1) * 0.5 +
-          math.sin(p.wobble + progress * 6) * 12;
-      final dy = math.sin(p.angle) * dist + gravity * progress * progress;
-      final x = originX + dx;
-      final y = originY + dy;
-      final opacity = (1 - progress * progress).clamp(0.0, 1.0);
-
-      canvas.save();
-      canvas.translate(x, y);
-      canvas.rotate(p.wobble + p.spin * progress);
-      final paint = Paint()..color = p.color.withValues(alpha: opacity);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset.zero, width: p.w, height: p.h),
-          const Radius.circular(1.5),
-        ),
+    const dash = 4.0;
+    const gap = 4.0;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    var y = 0.0;
+    final x = size.width / 2;
+    while (y < size.height) {
+      canvas.drawLine(
+        Offset(x, y),
+        Offset(x, math.min(y + dash, size.height)),
         paint,
       );
-      canvas.restore();
+      y += dash + gap;
     }
   }
 
   @override
-  bool shouldRepaint(covariant _ConfettiPainter old) => old.t != t;
-}
-
-class _Particle {
-  _Particle({
-    required this.fromLeft,
-    required this.angle,
-    required this.speed,
-    required this.color,
-    required this.w,
-    required this.h,
-    required this.spin,
-    required this.wobble,
-  });
-
-  final bool fromLeft;
-  final double angle;
-  final double speed;
-  final Color color;
-  final double w;
-  final double h;
-  final double spin;
-  final double wobble;
+  bool shouldRepaint(covariant _DashedLinePainter old) => old.color != color;
 }

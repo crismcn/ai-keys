@@ -363,16 +363,21 @@ class _HomePageState extends State<HomePage> {
   Widget _emptyState() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-      child: Column(
-        children: [
-          Icon(Icons.inbox_outlined,
-              size: 44, color: context.c.neutral.withValues(alpha: 0.7)),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            _query.isEmpty ? context.s.emptyNoEmails : context.s.emptyNoMatch,
-            style: TextStyle(color: context.c.textSecondary, fontSize: 14),
-          ),
-        ],
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(Icons.inbox_outlined,
+                size: 44, color: context.c.neutral.withValues(alpha: 0.7)),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              _query.isEmpty ? context.s.emptyNoEmails : context.s.emptyNoMatch,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.c.textSecondary, fontSize: 14),
+            ),
+          ],
+        ),
       ),
     );
   }

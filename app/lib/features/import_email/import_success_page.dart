@@ -7,6 +7,7 @@ import '../../core/models/email_account.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/tokens/app_tokens.dart';
 import '../../widgets/buttons.dart';
+import '../../widgets/confetti.dart';
 import '../../widgets/section_card.dart';
 import 'import_email_page.dart';
 
@@ -43,54 +44,64 @@ class _ImportSuccessPageState extends State<ImportSuccessPage>
     final r = widget.result;
     return Scaffold(
       backgroundColor: context.c.bg,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      const SizedBox(height: AppSpacing.xxl),
-                      _successMark(),
-                      const SizedBox(height: AppSpacing.xl),
-                      Text(
-                        context.s.importSuccess,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: context.c.textPrimary,
-                        ),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: AppSpacing.xxl),
+                          _successMark(),
+                          const SizedBox(height: AppSpacing.xl),
+                          Text(
+                            context.s.importSuccess,
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              color: context.c.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            context.s.importedCount(r.total),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: context.c.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          _summaryCard(r),
+                          const SizedBox(height: AppSpacing.lg),
+                        ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        context.s.importedCount(r.total),
-                        style: TextStyle(
-                            fontSize: 14, color: context.c.textSecondary),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-                      _summaryCard(r),
-                      const SizedBox(height: AppSpacing.lg),
-                    ],
+                    ),
                   ),
-                ),
+                  PrimaryButton(
+                    label: context.s.viewList,
+                    onPressed: () =>
+                        Navigator.of(context).popUntil((r) => r.isFirst),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  SecondaryButton(
+                    label: context.s.continueImport,
+                    onPressed: () => Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (_) => const ImportEmailPage(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
               ),
-              PrimaryButton(
-                label: context.s.viewList,
-                onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              SecondaryButton(
-                label: context.s.continueImport,
-                onPressed: () => Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => const ImportEmailPage()),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-            ],
+            ),
           ),
-        ),
+          const Positioned.fill(child: ConfettiOverlay()),
+        ],
       ),
     );
   }
@@ -107,7 +118,9 @@ class _ImportSuccessPageState extends State<ImportSuccessPage>
             painter: _BurstPainter(_controller.value),
             child: Center(
               child: Transform.scale(
-                scale: Curves.elasticOut.transform(_controller.value.clamp(0, 1)),
+                scale: Curves.elasticOut.transform(
+                  _controller.value.clamp(0, 1),
+                ),
                 child: child,
               ),
             ),
@@ -120,7 +133,11 @@ class _ImportSuccessPageState extends State<ImportSuccessPage>
             color: AppColors.success,
             shape: BoxShape.circle,
             boxShadow: [
-              BoxShadow(color: Color(0x3322C55E), blurRadius: 24, offset: Offset(0, 8)),
+              BoxShadow(
+                color: Color(0x3322C55E),
+                blurRadius: 24,
+                offset: Offset(0, 8),
+              ),
             ],
           ),
           child: const Icon(Icons.check_rounded, color: Colors.white, size: 44),
@@ -133,13 +150,18 @@ class _ImportSuccessPageState extends State<ImportSuccessPage>
     final rows = [
       (context.s.summaryAdded, '${r.added}', context.c.textPrimary),
       (context.s.summaryUpdated, '${r.updated}', context.c.textPrimary),
-      (context.s.summaryFailed, '${r.failed}',
-          r.failed > 0 ? AppColors.danger : context.c.textPrimary),
+      (
+        context.s.summaryFailed,
+        '${r.failed}',
+        r.failed > 0 ? AppColors.danger : context.c.textPrimary,
+      ),
       (context.s.summaryAvailable, '${r.available}', AppColors.success),
     ];
     return SectionCard(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
       child: Column(
         children: [
           for (var i = 0; i < rows.length; i++) ...[
@@ -151,7 +173,10 @@ class _ImportSuccessPageState extends State<ImportSuccessPage>
                 children: [
                   Text(
                     rows[i].$1,
-                    style: TextStyle(fontSize: 14, color: context.c.textSecondary),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: context.c.textSecondary,
+                    ),
                   ),
                   Text(
                     rows[i].$2,
