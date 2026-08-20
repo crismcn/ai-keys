@@ -45,7 +45,7 @@ class AiKeysApp extends StatelessWidget {
       child: Consumer<SettingsController>(
         builder: (context, settings, _) {
           return MaterialApp(
-            title: 'AI Keys',
+            title: 'AI Mails',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.light,
             darkTheme: AppTheme.dark,

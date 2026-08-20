@@ -9,7 +9,7 @@ class AppStrings {
   const AppStrings();
 
   // Common
-  String get appName => 'AI Keys';
+  String get appName => 'AI Mails';
   String get appSubtitle => '管理你的邮箱与激活状态';
   String get cancel => '取消';
   String get delete => '删除';
@@ -38,14 +38,16 @@ class AppStrings {
   String emailCount(int n) => '共 $n 个邮箱';
   String get confirmDeleteTitle => '删除邮箱';
   String confirmDeleteBody(String name) => '确定要删除 $name 吗？此操作不可撤销。';
-  String copyAccountText(String name, String password) => '帐号：$name 密码：$password';
+  String copyAccountText(String name, String password) =>
+      '帐号：$name 密码：$password';
 
   // Import page
   String get importCsvSection => '导入 CSV 文件';
   String get uploadHint => '点击或拖拽 CSV 文件到此处';
   String get uploadOnlyCsv => '仅支持 .csv 格式';
   String get pasteSection => '或 粘贴数据';
-  String get pasteHint => '请粘贴数据，格式如下：\n'
+  String get pasteHint =>
+      '请粘贴数据，格式如下：\n'
       '邮箱----密码----client_id----refresh_token----创建时间\n\n'
       'user1@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00\n'
       'user2@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00';

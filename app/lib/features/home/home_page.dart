@@ -50,8 +50,7 @@ class _HomePageState extends State<HomePage> {
     if (pos.pixels >= pos.maxScrollExtent - 200) _loadMore();
   }
 
-  int get _filteredLength =>
-      context.read<EmailStore>().search(_query).length;
+  int get _filteredLength => context.read<EmailStore>().search(_query).length;
 
   Future<void> _loadMore() async {
     if (_loadingMore || _visibleCount >= _filteredLength) return;
@@ -71,15 +70,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openImport() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ImportEmailPage()),
-    );
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ImportEmailPage()));
   }
 
   void _openMail(EmailAccount account) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => MailListPage(account: account)),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => MailListPage(account: account)));
   }
 
   void _openActivation(EmailAccount account) {
@@ -142,7 +140,11 @@ class _HomePageState extends State<HomePage> {
   Widget _header() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.lg),
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.lg,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -151,7 +153,7 @@ class _HomePageState extends State<HomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'AI Keys',
+                  'AI Mails',
                   style: TextStyle(
                     fontSize: 25,
                     fontWeight: FontWeight.w700,
@@ -163,7 +165,10 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 5),
                 Text(
                   context.s.appSubtitle,
-                  style: TextStyle(fontSize: 13, color: context.c.textSecondary),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.c.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -211,7 +216,10 @@ class _HomePageState extends State<HomePage> {
   // _LIST_
 
   Widget _listSection(
-      EmailStore store, List<EmailAccount> list, List<EmailAccount> visible) {
+    EmailStore store,
+    List<EmailAccount> list,
+    List<EmailAccount> visible,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       child: SectionCard(
@@ -240,7 +248,9 @@ class _HomePageState extends State<HomePage> {
               _emptyState()
             else
               ...List.generate(
-                  visible.length, (i) => _dismissibleItem(store, visible[i], i)),
+                visible.length,
+                (i) => _dismissibleItem(store, visible[i], i),
+              ),
             const SizedBox(height: AppSpacing.sm),
             _footer(store, list, visible),
           ],
@@ -260,8 +270,11 @@ class _HomePageState extends State<HomePage> {
       decoration: InputDecoration(
         hintText: context.s.searchHint,
         hintStyle: TextStyle(color: context.c.textSecondary, fontSize: 14),
-        prefixIcon: Icon(Icons.search_rounded,
-            color: context.c.textSecondary, size: 20),
+        prefixIcon: Icon(
+          Icons.search_rounded,
+          color: context.c.textSecondary,
+          size: 20,
+        ),
         filled: true,
         fillColor: context.c.bg,
         isDense: true,
@@ -279,11 +292,12 @@ class _HomePageState extends State<HomePage> {
       children: [
         if (index > 0)
           Divider(
-              height: 1,
-              thickness: 1,
-              color: context.c.border,
-              indent: 72,
-              endIndent: 16),
+            height: 1,
+            thickness: 1,
+            color: context.c.border,
+            indent: 72,
+            endIndent: 16,
+          ),
         Dismissible(
           key: ValueKey(account.email),
           direction: DismissDirection.endToStart,
@@ -293,7 +307,10 @@ class _HomePageState extends State<HomePage> {
             alignment: Alignment.centerRight,
             color: AppColors.danger,
             padding: const EdgeInsets.only(right: 24),
-            child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+            child: const Icon(
+              Icons.delete_outline_rounded,
+              color: Colors.white,
+            ),
           ),
           child: EmailListItem(
             account: account,
@@ -307,7 +324,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _footer(
-      EmailStore store, List<EmailAccount> list, List<EmailAccount> visible) {
+    EmailStore store,
+    List<EmailAccount> list,
+    List<EmailAccount> visible,
+  ) {
     if (_loadingMore) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -318,7 +338,9 @@ class _HomePageState extends State<HomePage> {
               width: 16,
               height: 16,
               child: CircularProgressIndicator(
-                  strokeWidth: 2, color: context.c.neutral),
+                strokeWidth: 2,
+                color: context.c.neutral,
+              ),
             ),
             const SizedBox(width: 8),
             Text(
@@ -358,8 +380,11 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined,
-                size: 44, color: context.c.neutral.withValues(alpha: 0.7)),
+            Icon(
+              Icons.inbox_outlined,
+              size: 44,
+              color: context.c.neutral.withValues(alpha: 0.7),
+            ),
             const SizedBox(height: AppSpacing.md),
             Text(
               _query.isEmpty ? context.s.emptyNoEmails : context.s.emptyNoMatch,

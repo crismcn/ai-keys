@@ -53,7 +53,7 @@ class ActivationService {
   /// Step 2 — poll the inbox for the code email and extract the code (#2/#3/#4).
   /// Only emails whose `date` is after [since] (the moment activation started)
   /// count, so a stale code from an earlier attempt is never picked up.
-  /// Polls every 30s for ~5 minutes.
+  /// Polls every 5s for ~5 minutes.
   static Future<VerificationResult> awaitVerificationCode(
     EmailAccount account, {
     required DateTime since,
@@ -62,8 +62,8 @@ class ActivationService {
     final mail = await _pollForEmail(
       account,
       (m) => m.cleanSubject == _codeSubject && _isAfter(m.date, since),
-      interval: const Duration(seconds: 30),
-      maxAttempts: 11,
+      interval: const Duration(seconds: 5),
+      maxAttempts: 60,
       isCancelled: isCancelled,
     );
     if (mail == null) throw ActivationException('未能收取到验证码，请重试');
@@ -120,7 +120,7 @@ class ActivationService {
 
   /// Step 4 — poll for the "claim" email (#5.1) and extract its auth link (#5.2).
   /// Like step 2, only emails newer than [since] are considered. Polls every
-  /// 20s for ~5 minutes.
+  /// 5s for ~5 minutes.
   static Future<String> awaitAuthLink(
     EmailAccount account, {
     required DateTime since,
@@ -129,8 +129,8 @@ class ActivationService {
     final mail = await _pollForEmail(
       account,
       (m) => m.cleanSubject.startsWith(_claimPrefix) && _isAfter(m.date, since),
-      interval: const Duration(seconds: 20),
-      maxAttempts: 16,
+      interval: const Duration(seconds: 5),
+      maxAttempts: 60,
       isCancelled: isCancelled,
     );
     if (mail == null) throw ActivationException('未获取到认证链接，请重试');
@@ -183,12 +183,21 @@ class ActivationService {
     return d != null && d.isAfter(since);
   }
 
-  /// Extracts a verification code: a 6-digit run first, else any 4–8 digit run.
+  /// Extracts a verification code: prefer the token right after the "验证码为"
+  /// phrase (allowing inline tags), else a bare 6-digit run, else a bare 6-char
+  /// alphanumeric run, else any 4–8 digit run. CUN.AI codes may be mixed
+  /// alphanumeric (e.g. `d0a870`), so digit-only matching is not enough.
   static String? _extractCode(String text) {
-    final six = RegExp(r'\b(\d{6})\b').firstMatch(text);
-    if (six != null) return six.group(1);
-    final any = RegExp(r'(\d{4,8})').firstMatch(text);
-    return any?.group(1);
+    final afterPhrase = RegExp(
+            r'验证码为\s*[:：]?\s*(?:<[^>]+>\s*)*([A-Za-z0-9]{6})')
+        .firstMatch(text);
+    if (afterPhrase != null) return afterPhrase.group(1);
+    final sixDigits = RegExp(r'\b(\d{6})\b').firstMatch(text);
+    if (sixDigits != null) return sixDigits.group(1);
+    final sixAlnum = RegExp(r'\b([A-Za-z0-9]{6})\b').firstMatch(text);
+    if (sixAlnum != null) return sixAlnum.group(1);
+    final anyDigits = RegExp(r'(\d{4,8})').firstMatch(text);
+    return anyDigits?.group(1);
   }
 
   /// Extracts the first http(s) URL, preferring ones that look like the claim
