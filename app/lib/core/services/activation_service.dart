@@ -21,6 +21,16 @@ class ActivationException implements Exception {
   String toString() => message;
 }
 
+/// Auth link + parsed credit/quota from the activation ("claim") email,
+/// produced by [ActivationService.awaitAuthLink].
+class AuthLinkResult {
+  const AuthLinkResult({required this.link, required this.quota});
+  final String link;
+
+  /// Credit parsed from the email (e.g. `$5.800000`), empty if none found.
+  final String quota;
+}
+
 /// Drives the real activation flow against the CUN.AI + IMAP backends
 /// (API.MD #1/#2/#3/#4/#5). Mail polling reuses [MailService].
 class ActivationService {
@@ -61,7 +71,8 @@ class ActivationService {
   }) async {
     final mail = await _pollForEmail(
       account,
-      (m) => m.cleanSubject == _codeSubject && _isAfter(m.date, since),
+      (m) =>
+          m.cleanSubject.contains(_codeSubject) && _isFreshEnough(m.date, since),
       interval: const Duration(seconds: 5),
       maxAttempts: 60,
       isCancelled: isCancelled,
@@ -118,17 +129,19 @@ class ActivationService {
     }
   }
 
-  /// Step 4 — poll for the "claim" email (#5.1) and extract its auth link (#5.2).
-  /// Like step 2, only emails newer than [since] are considered. Polls every
-  /// 5s for ~5 minutes.
-  static Future<String> awaitAuthLink(
+  /// Step 4 — poll for the "claim" email (#5.1) and extract its auth link (#5.2)
+  /// plus the credit/quota it grants. Like step 2, only emails newer than
+  /// [since] are considered. Polls every 5s for ~5 minutes.
+  static Future<AuthLinkResult> awaitAuthLink(
     EmailAccount account, {
     required DateTime since,
     required bool Function() isCancelled,
   }) async {
     final mail = await _pollForEmail(
       account,
-      (m) => m.cleanSubject.startsWith(_claimPrefix) && _isAfter(m.date, since),
+      (m) =>
+          m.cleanSubject.startsWith(_claimPrefix) &&
+          _isFreshEnough(m.date, since),
       interval: const Duration(seconds: 5),
       maxAttempts: 60,
       isCancelled: isCancelled,
@@ -145,9 +158,10 @@ class ActivationService {
       throw ActivationException('读取认证邮件失败：$e');
     }
 
-    final link = _extractLink('${detail.html}\n${detail.body}');
+    final text = '${detail.html}\n${detail.body}';
+    final link = _extractLink(text);
     if (link == null) throw ActivationException('认证邮件中未找到认证链接');
-    return link;
+    return AuthLinkResult(link: link, quota: _extractQuota(text) ?? '');
   }
 
   /// Polls page 1 of the inbox until [test] matches an email, [maxAttempts] is
@@ -175,12 +189,21 @@ class ActivationService {
     return null;
   }
 
-  /// True when the mail's raw [date] header parses to an instant after [since].
-  /// `DateTime.isAfter` compares absolute instants, so the timezone offset in
-  /// the header and the local [since] are handled correctly.
-  static bool _isAfter(String date, DateTime since) {
+  /// Whether the mail is recent enough to belong to this activation attempt.
+  /// The email header's [date] carries a timezone offset, so `DateTime.parse`
+  /// yields a correct absolute instant and `isAfter` compares instants.
+  ///
+  /// A 10-minute grace window is subtracted from [since] so that clock skew
+  /// between the mail server and this device (which can time-stamp a genuinely
+  /// fresh code email a little *before* the moment we entered the page) doesn't
+  /// wrongly discard it — the earlier strict `isAfter(since)` check let a
+  /// visible, valid code go unmatched. Codes older than the window are expired
+  /// anyway, so registration would reject them. An unparseable date is treated
+  /// as fresh: never let a bad header block a subject match.
+  static bool _isFreshEnough(String date, DateTime since) {
     final d = DateTime.tryParse(date);
-    return d != null && d.isAfter(since);
+    if (d == null) return true;
+    return d.isAfter(since.subtract(const Duration(minutes: 10)));
   }
 
   /// Extracts a verification code: prefer the token right after the "验证码为"
@@ -213,6 +236,16 @@ class ActivationService {
       if (lower.contains('claim') || lower.contains('cun.ai')) return u;
     }
     return urls.first;
+  }
+
+  /// Extracts the credit/quota amount from the claim email — a currency-marked
+  /// number such as `＄5.800000` / `$5.80` (the full-width `＄` in the mail is
+  /// matched alongside a plain `$`). Returns it normalized with a `$` prefix,
+  /// or null if none is present.
+  static String? _extractQuota(String text) {
+    final m = RegExp(r'[＄$]\s*([0-9]+(?:\.[0-9]+)?)').firstMatch(text);
+    if (m == null) return null;
+    return '\$${m.group(1)}';
   }
 
   /// True unless the JSON body explicitly carries `"success": false`.

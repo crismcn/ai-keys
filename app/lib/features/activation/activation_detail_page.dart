@@ -42,6 +42,7 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
   bool _done = false;
   String? _stepError; // non-null → current step failed (shows retry)
   String? _authLink; // auth link revealed at step 4 (index 3)
+  bool _webViewAutoOpened = false; // guards the one-shot auto-open of the flow
 
   // Cached intermediate results so a retry can resume mid-pipeline.
   String? _messageId;
@@ -147,17 +148,34 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
         if (!mounted) return;
       }
       _startStep(3);
-      final link = await ActivationService.awaitAuthLink(
+      final result = await ActivationService.awaitAuthLink(
         account,
         since: _enteredAt,
         isCancelled: _isCancelled,
       );
       if (!mounted) return;
-      setState(() => _authLink = link);
+      setState(() => _authLink = result.link);
 
       _timer?.cancel();
       setState(() => _done = true);
-      if (mounted) context.read<EmailStore>().markActivated(account);
+      if (mounted) {
+        // Persist the link + parsed quota (and mark activated) for the records.
+        context.read<EmailStore>().setActivationResult(
+              account,
+              authLink: result.link,
+              quota: result.quota,
+            );
+      }
+
+      // Per spec: once the auth link arrives, drive the rest of the flow in the
+      // WebView automatically instead of waiting for a tap. Guarded so it fires
+      // once even if the pipeline is retried.
+      if (!_webViewAutoOpened) {
+        _webViewAutoOpened = true;
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) _openAuthLink();
+        });
+      }
     } on ActivationException catch (e) {
       if (!mounted) return;
       _timer?.cancel();
@@ -173,9 +191,25 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
   void _openAuthLink() {
     final url = _authLink;
     if (url == null) return;
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => ActivationWebViewPage(url: url)));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ActivationWebViewPage(
+          url: url,
+          loginEmail: widget.account.email,
+          loginPassword: widget.account.password,
+          onKeyCaptured: _saveApiKey,
+        ),
+      ),
+    );
+  }
+
+  /// Persists the API key captured from the web flow onto the account, so it
+  /// shows in the mailbox info (mail list header). The web page pops itself
+  /// back to here automatically after copying.
+  void _saveApiKey(String key) {
+    if (!mounted) return;
+    context.read<EmailStore>().setApiKey(widget.account, key);
+    _toast(context.s.apiKeySaved);
   }
 
   void _copyAuthLink() {

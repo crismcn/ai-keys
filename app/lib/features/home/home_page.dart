@@ -21,8 +21,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-/// List filter driven by the two stat cards at the top of the home page.
-enum _HomeFilter { all, activated }
+/// List filter driven by the four stat cards at the top of the home page.
+enum _HomeFilter { all, activated, inactive, used }
 
 class _HomePageState extends State<HomePage> {
   static const _pageSize = 12;
@@ -59,10 +59,22 @@ class _HomePageState extends State<HomePage> {
 
   /// Applies the active stat-card filter on top of the search results.
   List<EmailAccount> _applyFilter(List<EmailAccount> list) {
-    if (_filter == _HomeFilter.activated) {
-      return list.where((a) => a.activated).toList();
+    switch (_filter) {
+      case _HomeFilter.activated:
+        return list.where((a) => a.activated).toList();
+      case _HomeFilter.inactive:
+        return list.where((a) => !a.activated).toList();
+      case _HomeFilter.used:
+        return list.where((a) => a.used).toList();
+      case _HomeFilter.all:
+        return list;
     }
-    return list;
+  }
+
+  /// Taps a stat card: selects its filter, or clears back to [all] if already
+  /// selected. The total card always selects [all].
+  void _toggleFilter(_HomeFilter filter) {
+    _setFilter(_filter == filter ? _HomeFilter.all : filter);
   }
 
   void _setFilter(_HomeFilter filter) {
@@ -279,36 +291,66 @@ class _HomePageState extends State<HomePage> {
   Widget _stats(EmailStore store) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: StatCard(
-              title: context.s.statEmailCount,
-              value: '${store.total}',
-              caption: context.s.statTotal,
-              icon: Icons.mail_outline_rounded,
-              iconColor: AppColors.primary,
-              iconBg: context.c.primarySoft,
-              selected: _filter == _HomeFilter.all,
-              onTap: () => _setFilter(_HomeFilter.all),
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: StatCard(
-              title: context.s.statActivated,
-              value: '${store.available}',
-              caption: context.s.statAvailable,
-              icon: Icons.check_circle_outline_rounded,
-              iconColor: AppColors.success,
-              iconBg: context.c.successSoft,
-              selected: _filter == _HomeFilter.activated,
-              onTap: () => _setFilter(
-                _filter == _HomeFilter.activated
-                    ? _HomeFilter.all
-                    : _HomeFilter.activated,
+          Row(
+            children: [
+              Expanded(
+                child: StatCard(
+                  title: context.s.statEmailCount,
+                  value: '${store.total}',
+                  caption: context.s.statTotal,
+                  icon: Icons.mail_outline_rounded,
+                  iconColor: AppColors.primary,
+                  iconBg: context.c.primarySoft,
+                  selected: _filter == _HomeFilter.all,
+                  onTap: () => _setFilter(_HomeFilter.all),
+                ),
               ),
-            ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: StatCard(
+                  title: context.s.statActivated,
+                  value: '${store.available}',
+                  caption: context.s.statAvailable,
+                  icon: Icons.check_circle_outline_rounded,
+                  iconColor: AppColors.success,
+                  iconBg: context.c.successSoft,
+                  selected: _filter == _HomeFilter.activated,
+                  onTap: () => _toggleFilter(_HomeFilter.activated),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            children: [
+              Expanded(
+                child: StatCard(
+                  title: context.s.statInactive,
+                  value: '${store.inactive}',
+                  caption: context.s.statusInactive,
+                  icon: Icons.radio_button_unchecked_rounded,
+                  iconColor: context.c.neutral,
+                  iconBg: context.c.neutral.withValues(alpha: 0.14),
+                  selected: _filter == _HomeFilter.inactive,
+                  onTap: () => _toggleFilter(_HomeFilter.inactive),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: StatCard(
+                  title: context.s.statUsed,
+                  value: '${store.used}',
+                  caption: context.s.statusUsed,
+                  icon: Icons.hourglass_bottom_rounded,
+                  iconColor: AppColors.used,
+                  iconBg: AppColors.used.withValues(alpha: 0.14),
+                  selected: _filter == _HomeFilter.used,
+                  onTap: () => _toggleFilter(_HomeFilter.used),
+                ),
+              ),
+            ],
           ),
         ],
       ),

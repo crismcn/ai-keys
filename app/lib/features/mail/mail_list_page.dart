@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/models/email_account.dart';
 import '../../core/models/mail_message.dart';
 import '../../core/services/mail_read_store.dart';
 import '../../core/services/mail_service.dart';
+import '../../core/state/email_store.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/tokens/app_tokens.dart';
 import '../../widgets/avatar.dart';
@@ -186,34 +189,186 @@ class _MailListPageState extends State<MailListPage> {
   }
 
   Widget _accountCard(EmailAccount account) {
-    return SectionCard(
-      child: Row(
-        children: [
-          LetterAvatar(name: account.email, letter: account.initial, size: 48),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  account.accountName,
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: context.c.textPrimary,
+    return Dismissible(
+      key: ValueKey('mail-account-${account.email}'),
+      confirmDismiss: (direction) async {
+        // Never dismiss: swipe just advances state, then the card snaps back.
+        await _onAccountSwipe(account, direction);
+        return false;
+      },
+      // startToEnd (右滑) → 已使用 (黄); endToStart (左滑) → 激活 (绿).
+      background: _swipeBackground(
+        color: AppColors.used,
+        icon: Icons.hourglass_bottom_rounded,
+        alignment: Alignment.centerLeft,
+      ),
+      secondaryBackground: _swipeBackground(
+        color: AppColors.success,
+        icon: Icons.check_circle_outline_rounded,
+        alignment: Alignment.centerRight,
+      ),
+      child: SectionCard(
+        child: Row(
+          children: [
+            LetterAvatar(name: account.email, letter: account.initial, size: 48),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    account.accountName,
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: context.c.textPrimary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  account.email,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13, color: context.c.textSecondary),
-                ),
-              ],
+                  const SizedBox(height: 3),
+                  Text(
+                    account.email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, color: context.c.textSecondary),
+                  ),
+                  if (account.apiKey.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _apiKeyChip(account.apiKey),
+                  ],
+                ],
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Swipe-left (endToStart) marks the account activated; swipe-right
+  /// (startToEnd) marks it used. Both confirm first and never remove the card.
+  Future<void> _onAccountSwipe(
+    EmailAccount account,
+    DismissDirection direction,
+  ) async {
+    final store = context.read<EmailStore>();
+    if (direction == DismissDirection.endToStart) {
+      final ok = await _confirm(
+        title: context.s.confirmActivateTitle,
+        body: context.s.confirmActivateBody(account.accountName),
+        action: context.s.activate,
+        actionColor: AppColors.success,
+      );
+      if (ok) {
+        await store.markActivated(account);
+        if (mounted) _toast(context.s.activatedToast);
+      }
+    } else {
+      final ok = await _confirm(
+        title: context.s.confirmUsedTitle,
+        body: context.s.confirmUsedBody(account.accountName),
+        action: context.s.markUsed,
+        actionColor: AppColors.used,
+      );
+      if (ok) {
+        await store.markUsed(account);
+        if (mounted) _toast(context.s.usedToast);
+      }
+    }
+  }
+
+  Future<bool> _confirm({
+    required String title,
+    required String body,
+    required String action,
+    required Color actionColor,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(context.s.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: actionColor),
+            child: Text(action),
           ),
         ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
+  Widget _swipeBackground({
+    required Color color,
+    required IconData icon,
+    required Alignment alignment,
+  }) {
+    return Container(
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Icon(icon, color: Colors.white),
+    );
+  }
+
+  /// Tap-to-copy chip for the account's captured API key, shown in the header.
+  Widget _apiKeyChip(String key) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.button),
+        onTap: () {
+          Clipboard.setData(ClipboardData(text: key));
+          _toast(context.s.copied);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: context.c.primarySoft,
+            borderRadius: BorderRadius.circular(AppRadius.button),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.key_rounded, size: 13, color: AppColors.primary),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  key,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.copy_rounded, size: 13, color: AppColors.primary),
+            ],
+          ),
+        ),
       ),
     );
   }

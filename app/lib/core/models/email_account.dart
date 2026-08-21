@@ -11,6 +11,9 @@ class EmailAccount {
     this.createdAt = '',
     this.activated = false,
     this.used = false,
+    this.apiKey = '',
+    this.authLink = '',
+    this.quota = '',
   });
 
   final String email;
@@ -20,6 +23,17 @@ class EmailAccount {
   final String createdAt;
   final bool activated;
   final bool used;
+
+  /// API key generated on cun.ai during activation, captured back into the app.
+  final String apiKey;
+
+  /// Auth (claim) link extracted from the activation email — kept for the
+  /// activation records page.
+  final String authLink;
+
+  /// Credit/quota parsed from the activation email (e.g. `$5.800000`), empty
+  /// if none was found.
+  final String quota;
 
   /// Derived lifecycle state. `used` takes precedence over `activated`.
   AccountStatus get status => used
@@ -37,7 +51,14 @@ class EmailAccount {
   String get initial =>
       accountName.isNotEmpty ? accountName[0].toUpperCase() : '?';
 
-  EmailAccount copyWith({bool? activated, bool? used}) => EmailAccount(
+  EmailAccount copyWith({
+    bool? activated,
+    bool? used,
+    String? apiKey,
+    String? authLink,
+    String? quota,
+  }) =>
+      EmailAccount(
         email: email,
         password: password,
         clientId: clientId,
@@ -45,6 +66,9 @@ class EmailAccount {
         createdAt: createdAt,
         activated: activated ?? this.activated,
         used: used ?? this.used,
+        apiKey: apiKey ?? this.apiKey,
+        authLink: authLink ?? this.authLink,
+        quota: quota ?? this.quota,
       );
 
   Map<String, dynamic> toJson() => {
@@ -55,6 +79,9 @@ class EmailAccount {
         'createdAt': createdAt,
         'activated': activated,
         'used': used,
+        'apiKey': apiKey,
+        'authLink': authLink,
+        'quota': quota,
       };
 
   factory EmailAccount.fromJson(Map<String, dynamic> json) => EmailAccount(
@@ -65,6 +92,9 @@ class EmailAccount {
         createdAt: json['createdAt'] as String? ?? '',
         activated: json['activated'] as bool? ?? false,
         used: json['used'] as bool? ?? false,
+        apiKey: json['apiKey'] as String? ?? '',
+        authLink: json['authLink'] as String? ?? '',
+        quota: json['quota'] as String? ?? '',
       );
 }
 

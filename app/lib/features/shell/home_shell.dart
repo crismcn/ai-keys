@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/theme/app_palette.dart';
+import '../activation/activation_records_page.dart';
 import '../home/home_page.dart';
-import '../placeholder/placeholder_page.dart';
 import '../settings/settings_page.dart';
 
 /// Root scaffold with the three bottom-nav tabs.
@@ -21,7 +21,7 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final pages = [
       const HomePage(),
-      PlaceholderPage(title: context.s.navActivation, icon: Icons.history_rounded),
+      const ActivationRecordsPage(),
       const SettingsPage(),
     ];
 

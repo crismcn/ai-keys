@@ -25,6 +25,8 @@ class AppStrings {
   String get statTotal => '总数量';
   String get statActivated => '已激活数量';
   String get statAvailable => '可用数量';
+  String get statInactive => '未激活数量';
+  String get statUsed => '已使用数量';
   String get emailListTitle => '邮箱列表';
   String get searchHint => '搜索邮箱或密码';
   String get emptyNoEmails => '还没有邮箱，点击右上角导入';
@@ -120,12 +122,20 @@ class AppStrings {
   String get authLinkTitle => '激活认证链接';
   String get authLinkHint => '点击下方链接，在打开的页面中完成认证';
   String get authLinkOpen => '打开认证链接';
+  String get apiKeyLabel => 'API 密钥';
+  String get apiKeySaved => '密钥已保存到邮箱';
+  String get copyKey => '复制密钥';
+
+  // Activation records
+  String get quotaLabel => '额度';
+  String get recordsEmpty => '还没有激活记录';
 
   // Auth webview
   String get webviewTitle => '激活认证';
   String get webviewLoadError => '页面加载失败，请检查网络后重试';
   String get webviewRetry => '重试';
   String get webviewOpenExternal => '在浏览器中打开';
+  String get webPageTitle => '网页';
 
   // Settings
   String get settingsTitle => '设置';
@@ -177,6 +187,10 @@ class AppStringsEn extends AppStrings {
   String get statActivated => 'Activated';
   @override
   String get statAvailable => 'Available';
+  @override
+  String get statInactive => 'Inactive';
+  @override
+  String get statUsed => 'Used';
   @override
   String get emailListTitle => 'Mailbox List';
   @override
@@ -358,6 +372,18 @@ class AppStringsEn extends AppStrings {
       'Tap the link below and complete verification on the page that opens';
   @override
   String get authLinkOpen => 'Open Verification Link';
+  @override
+  String get apiKeyLabel => 'API Key';
+  @override
+  String get apiKeySaved => 'API key saved to mailbox';
+  @override
+  String get copyKey => 'Copy key';
+
+  // Activation records
+  @override
+  String get quotaLabel => 'Credit';
+  @override
+  String get recordsEmpty => 'No activation records yet';
 
   // Auth webview
   @override
@@ -369,6 +395,8 @@ class AppStringsEn extends AppStrings {
   String get webviewRetry => 'Retry';
   @override
   String get webviewOpenExternal => 'Open in browser';
+  @override
+  String get webPageTitle => 'Web Page';
 
   // Settings
   @override

@@ -19,6 +19,12 @@ class EmailStore extends ChangeNotifier {
   int get total => _accounts.length;
   int get available => _accounts.where((a) => a.activated).length;
 
+  /// Accounts not yet activated (status == inactive).
+  int get inactive => _accounts.where((a) => !a.activated).length;
+
+  /// Accounts marked used (status == used).
+  int get used => _accounts.where((a) => a.used).length;
+
   /// Case-insensitive filter over account name / email / password.
   List<EmailAccount> search(String query) {
     final q = query.trim().toLowerCase();
@@ -64,6 +70,9 @@ class EmailStore extends ChangeNotifier {
         _accounts[idx] = acc.copyWith(
           activated: _accounts[idx].activated,
           used: _accounts[idx].used,
+          apiKey: _accounts[idx].apiKey,
+          authLink: _accounts[idx].authLink,
+          quota: _accounts[idx].quota,
         );
         updated++;
       } else {
@@ -97,11 +106,40 @@ class EmailStore extends ChangeNotifier {
     }
   }
 
+  /// Marks the account activated and stores the auth link + parsed quota
+  /// captured from the activation email (feeds the activation records page).
+  Future<void> setActivationResult(
+    EmailAccount account, {
+    required String authLink,
+    required String quota,
+  }) async {
+    final idx = _accounts.indexWhere((a) => a.email == account.email);
+    if (idx >= 0) {
+      _accounts[idx] = _accounts[idx].copyWith(
+        activated: true,
+        authLink: authLink,
+        quota: quota,
+      );
+      await _persist();
+      notifyListeners();
+    }
+  }
+
   Future<void> markUsed(EmailAccount account) async {
     final idx = _accounts.indexWhere((a) => a.email == account.email);
     if (idx >= 0) {
       // "Used" implies the account was activated first.
       _accounts[idx] = _accounts[idx].copyWith(activated: true, used: true);
+      await _persist();
+      notifyListeners();
+    }
+  }
+
+  /// Stores the API key captured from cun.ai onto the matching account.
+  Future<void> setApiKey(EmailAccount account, String apiKey) async {
+    final idx = _accounts.indexWhere((a) => a.email == account.email);
+    if (idx >= 0) {
+      _accounts[idx] = _accounts[idx].copyWith(apiKey: apiKey);
       await _persist();
       notifyListeners();
     }

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -8,6 +10,7 @@ import '../../core/services/mail_service.dart';
 import '../../core/theme/app_palette.dart';
 import '../../core/tokens/app_tokens.dart';
 import '../../widgets/avatar.dart';
+import '../activation/activation_webview_page.dart';
 
 /// Bottom-sheet drawer showing one email's full content (API.MD #3).
 ///
@@ -65,6 +68,22 @@ class _MailDetailSheetState extends State<MailDetailSheet> {
           ? (WebViewController()
               ..setJavaScriptMode(JavaScriptMode.disabled)
               ..setBackgroundColor(context.c.surface)
+              ..setNavigationDelegate(
+                NavigationDelegate(
+                  // The body loads via loadHtmlString (base about:blank), so any
+                  // http(s) navigation is a user tapping a link — intercept it
+                  // and open in the full-screen in-app browser instead.
+                  onNavigationRequest: (request) {
+                    final url = request.url;
+                    if (url.startsWith('http://') ||
+                        url.startsWith('https://')) {
+                      _openLink(url);
+                      return NavigationDecision.prevent;
+                    }
+                    return NavigationDecision.navigate;
+                  },
+                ),
+              )
               ..loadHtmlString(_wrapHtml(detail.html)))
           : null;
       setState(() {
@@ -118,6 +137,17 @@ class _MailDetailSheetState extends State<MailDetailSheet> {
 ''';
   }
   // _BODY_
+
+  /// Opens a link tapped inside the rendered email body in the in-app browser.
+  void _openLink(String url) {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ActivationWebViewPage(url: url, title: context.s.webPageTitle),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +256,16 @@ class _MailDetailSheetState extends State<MailDetailSheet> {
         Divider(height: 1, color: context.c.border),
         Expanded(
           child: webController != null
-              ? WebViewWidget(controller: webController)
+              ? WebViewWidget(
+                  controller: webController,
+                  // Claim vertical drags so the WebView scrolls its own long
+                  // content instead of the modal sheet swallowing the gesture.
+                  gestureRecognizers: {
+                    Factory<VerticalDragGestureRecognizer>(
+                      VerticalDragGestureRecognizer.new,
+                    ),
+                  },
+                )
               : _plainBody(d),
         ),
       ],
