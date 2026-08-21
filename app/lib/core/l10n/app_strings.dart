@@ -24,6 +24,7 @@ class AppStrings {
   String get statEmailCount => '邮箱数量';
   String get statTotal => '总数量';
   String get statActivated => '已激活数量';
+  String get statPending => '待使用数量';
   String get statAvailable => '可用数量';
   String get statInactive => '未激活数量';
   String get statUsed => '已使用数量';
@@ -129,6 +130,17 @@ class AppStrings {
   // Activation records
   String get quotaLabel => '额度';
   String get recordsEmpty => '还没有激活记录';
+  String get exportRecords => '导出';
+  String get recordsTabUsed => '已使用';
+  String get recordsTabPending => '待使用';
+  String get keyNotCreated => '去创建';
+  String copyMailboxInfo({
+    required String account,
+    required String email,
+    required String password,
+    required String key,
+  }) =>
+      '帐号：$account\n邮箱：$email\n密码：$password\n密钥：$key';
 
   // Auth webview
   String get webviewTitle => '激活认证';
@@ -185,6 +197,8 @@ class AppStringsEn extends AppStrings {
   String get statTotal => 'Total';
   @override
   String get statActivated => 'Activated';
+  @override
+  String get statPending => 'Pending';
   @override
   String get statAvailable => 'Available';
   @override
@@ -384,6 +398,22 @@ class AppStringsEn extends AppStrings {
   String get quotaLabel => 'Credit';
   @override
   String get recordsEmpty => 'No activation records yet';
+  @override
+  String get exportRecords => 'Export';
+  @override
+  String get recordsTabUsed => 'Used';
+  @override
+  String get recordsTabPending => 'Pending';
+  @override
+  String get keyNotCreated => 'Create';
+  @override
+  String copyMailboxInfo({
+    required String account,
+    required String email,
+    required String password,
+    required String key,
+  }) =>
+      'Account: $account\nEmail: $email\nPassword: $password\nKey: $key';
 
   // Auth webview
   @override

@@ -19,6 +19,10 @@ class EmailStore extends ChangeNotifier {
   int get total => _accounts.length;
   int get available => _accounts.where((a) => a.activated).length;
 
+  /// Accounts activated but not yet used (status == available) — the home
+  /// "待使用" count and the activation records "待使用" list.
+  int get pending => _accounts.where((a) => a.activated && !a.used).length;
+
   /// Accounts not yet activated (status == inactive).
   int get inactive => _accounts.where((a) => !a.activated).length;
 
@@ -73,6 +77,7 @@ class EmailStore extends ChangeNotifier {
           apiKey: _accounts[idx].apiKey,
           authLink: _accounts[idx].authLink,
           quota: _accounts[idx].quota,
+          activatedAt: _accounts[idx].activatedAt,
         );
         updated++;
       } else {
@@ -100,7 +105,10 @@ class EmailStore extends ChangeNotifier {
   Future<void> markActivated(EmailAccount account) async {
     final idx = _accounts.indexWhere((a) => a.email == account.email);
     if (idx >= 0) {
-      _accounts[idx] = _accounts[idx].copyWith(activated: true);
+      _accounts[idx] = _accounts[idx].copyWith(
+        activated: true,
+        activatedAt: _stampFor(_accounts[idx]),
+      );
       await _persist();
       notifyListeners();
     }
@@ -119,6 +127,7 @@ class EmailStore extends ChangeNotifier {
         activated: true,
         authLink: authLink,
         quota: quota,
+        activatedAt: DateTime.now().toIso8601String(),
       );
       await _persist();
       notifyListeners();
@@ -129,11 +138,20 @@ class EmailStore extends ChangeNotifier {
     final idx = _accounts.indexWhere((a) => a.email == account.email);
     if (idx >= 0) {
       // "Used" implies the account was activated first.
-      _accounts[idx] = _accounts[idx].copyWith(activated: true, used: true);
+      _accounts[idx] = _accounts[idx].copyWith(
+        activated: true,
+        used: true,
+        activatedAt: _stampFor(_accounts[idx]),
+      );
       await _persist();
       notifyListeners();
     }
   }
+
+  /// Keeps an existing activation timestamp, else stamps now — so re-marking an
+  /// already-activated account doesn't reorder the records.
+  String _stampFor(EmailAccount a) =>
+      a.activatedAt.isNotEmpty ? a.activatedAt : DateTime.now().toIso8601String();
 
   /// Stores the API key captured from cun.ai onto the matching account.
   Future<void> setApiKey(EmailAccount account, String apiKey) async {

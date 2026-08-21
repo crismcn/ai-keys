@@ -40,6 +40,7 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
   int _current = 0; // index of the active step
   int _elapsed = 0; // seconds elapsed on current step
   bool _done = false;
+  bool _keyCaptured = false; // API key returned from the web flow → confetti
   String? _stepError; // non-null → current step failed (shows retry)
   String? _authLink; // auth link revealed at step 4 (index 3)
   bool _webViewAutoOpened = false; // guards the one-shot auto-open of the flow
@@ -209,6 +210,8 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
   void _saveApiKey(String key) {
     if (!mounted) return;
     context.read<EmailStore>().setApiKey(widget.account, key);
+    // Celebrate only now — the key is back in the app, the flow is truly done.
+    setState(() => _keyCaptured = true);
     _toast(context.s.apiKeySaved);
   }
 
@@ -335,7 +338,7 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
                 _warningBanner(),
               ],
             ),
-            if (_done) const Positioned.fill(child: ConfettiOverlay()),
+            if (_keyCaptured) const Positioned.fill(child: ConfettiOverlay()),
           ],
         ),
       ),

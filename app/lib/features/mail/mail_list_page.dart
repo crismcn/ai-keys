@@ -189,6 +189,13 @@ class _MailListPageState extends State<MailListPage> {
   }
 
   Widget _accountCard(EmailAccount account) {
+    // Resolve the live account from the store so a key captured *after* this
+    // page opened (widget.account is a snapshot) still shows its chip.
+    final store = context.watch<EmailStore>();
+    final current = store.accounts.firstWhere(
+      (a) => a.email == account.email,
+      orElse: () => account,
+    );
     return Dismissible(
       key: ValueKey('mail-account-${account.email}'),
       confirmDismiss: (direction) async {
@@ -208,37 +215,83 @@ class _MailListPageState extends State<MailListPage> {
         alignment: Alignment.centerRight,
       ),
       child: SectionCard(
-        child: Row(
+        child: Stack(
           children: [
-            LetterAvatar(name: account.email, letter: account.initial, size: 48),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Padding(
+              // Reserve room so long names don't run under the copy button.
+              padding: const EdgeInsets.only(right: 34),
+              child: Row(
                 children: [
-                  Text(
-                    account.accountName,
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: context.c.textPrimary,
+                  LetterAvatar(
+                      name: account.email, letter: account.initial, size: 48),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          account.accountName,
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: context.c.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          account.email,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 13, color: context.c.textSecondary),
+                        ),
+                        if (current.apiKey.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          _apiKeyChip(current.apiKey),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    account.email,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, color: context.c.textSecondary),
-                  ),
-                  if (account.apiKey.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    _apiKeyChip(account.apiKey),
-                  ],
                 ],
               ),
             ),
+            // Copy-all button (top-right): account/email/password/key.
+            Positioned(
+              top: 0,
+              right: 0,
+              child: _copyInfoButton(current),
+            ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Copies the full mailbox info (account / email / password / key) to the
+  /// clipboard in the labelled multi-line format.
+  Widget _copyInfoButton(EmailAccount account) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.button),
+        onTap: () {
+          Clipboard.setData(ClipboardData(
+            text: context.s.copyMailboxInfo(
+              account: account.accountName,
+              email: account.email,
+              password: account.password,
+              key: account.apiKey,
+            ),
+          ));
+          _toast(context.s.copied);
+        },
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: context.c.primarySoft,
+            borderRadius: BorderRadius.circular(AppRadius.button),
+          ),
+          child: const Icon(Icons.copy_rounded, size: 16, color: AppColors.primary),
         ),
       ),
     );

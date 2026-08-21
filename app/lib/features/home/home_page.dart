@@ -22,7 +22,7 @@ class HomePage extends StatefulWidget {
 }
 
 /// List filter driven by the four stat cards at the top of the home page.
-enum _HomeFilter { all, activated, inactive, used }
+enum _HomeFilter { all, pending, inactive, used }
 
 class _HomePageState extends State<HomePage> {
   static const _pageSize = 12;
@@ -60,8 +60,8 @@ class _HomePageState extends State<HomePage> {
   /// Applies the active stat-card filter on top of the search results.
   List<EmailAccount> _applyFilter(List<EmailAccount> list) {
     switch (_filter) {
-      case _HomeFilter.activated:
-        return list.where((a) => a.activated).toList();
+      case _HomeFilter.pending:
+        return list.where((a) => a.activated && !a.used).toList();
       case _HomeFilter.inactive:
         return list.where((a) => !a.activated).toList();
       case _HomeFilter.used:
@@ -310,14 +310,14 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(width: AppSpacing.md),
               Expanded(
                 child: StatCard(
-                  title: context.s.statActivated,
-                  value: '${store.available}',
+                  title: context.s.statPending,
+                  value: '${store.pending}',
                   caption: context.s.statAvailable,
                   icon: Icons.check_circle_outline_rounded,
                   iconColor: AppColors.success,
                   iconBg: context.c.successSoft,
-                  selected: _filter == _HomeFilter.activated,
-                  onTap: () => _toggleFilter(_HomeFilter.activated),
+                  selected: _filter == _HomeFilter.pending,
+                  onTap: () => _toggleFilter(_HomeFilter.pending),
                 ),
               ),
             ],

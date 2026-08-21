@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/l10n/app_strings.dart';
@@ -162,14 +163,44 @@ class _ActivationWebViewPageState extends State<ActivationWebViewPage> {
     }
   }
 
-  /// Receives the API key posted from the keys page, hands it to the caller to
-  /// persist, then pops back to the app. Guarded to run once.
-  void _onKeyCaptured(String key) {
+  /// Signalled by the keys page (step 6) once it has clicked the copy button
+  /// and verified a valid `sk-...` key was copied ([window.__copiedKey], with a
+  /// scrape / clipboard fallback). We re-verify the format here, persist the key
+  /// onto the account, then **clear the system clipboard** (the key is already
+  /// saved and shown with its own copy button, so no need to leave it lingering)
+  /// and pop back to the app. Guarded to run once; if nothing valid arrives it
+  /// stays disarmed so a later signal can retry.
+  Future<void> _onKeyCaptured(String captured) async {
     if (_keyCaptured) return;
-    final trimmed = key.trim();
-    if (trimmed.isEmpty) return;
+
+    final keyRe = RegExp(r'sk-[A-Za-z0-9_\-]{20,}');
+    var key = '';
+
+    // 1) The string the page copied — the real, unmasked key.
+    final m = keyRe.firstMatch(captured.trim());
+    if (m != null) key = m.group(0)!;
+
+    // 2) Fall back to verifying the actual system clipboard.
+    if (key.isEmpty) {
+      try {
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        final cm = keyRe.firstMatch(data?.text?.trim() ?? '');
+        if (cm != null) key = cm.group(0)!;
+      } catch (_) {
+        // Clipboard unavailable — ignore.
+      }
+    }
+
+    if (key.isEmpty) return; // no valid sk- key yet; stay disarmed for a retry
     _keyCaptured = true;
-    widget.onKeyCaptured?.call(trimmed);
+
+    widget.onKeyCaptured?.call(key);
+
+    // Verification succeeded → wipe the clipboard so the key doesn't linger.
+    try {
+      await Clipboard.setData(const ClipboardData(text: ''));
+    } catch (_) {}
+
     if (mounted) Navigator.of(context).maybePop();
   }
 
@@ -235,14 +266,58 @@ class _ActivationWebViewPageState extends State<ActivationWebViewPage> {
 
   /// JS injected on the keys page (AUTO-SCRIPT.MD #4–#6): after a short wait,
   /// click "创建 API 密钥 / Create API Key", fill the dialog name with
-  /// "test-api", click "保存更改 / Save changes", then read the generated key,
-  /// post it back via the KeyBridge channel, and click the copy-key button.
-  /// Buttons are matched by their (localized) text — with a plus-icon structural
-  /// fallback for the create button — since their class lists are volatile
-  /// Tailwind. Every step polls for its target to appear.
+  /// "test-api", click "保存更改 / Save changes"; then wait ~5s and click the
+  /// copy button (a tooltip-trigger carrying the copy icon) a few times to be
+  /// sure the key lands on the system clipboard, then signal Dart via KeyBridge.
+  /// Dart ([_onKeyCaptured]) reads the copied key back off the clipboard, saves
+  /// it and pops. Buttons/inputs are matched by text or structural icon since
+  /// their Tailwind classes are volatile. Every step polls for its target.
   String _createKeyScript() {
     return r'''
 (function() {
+  // Capture whatever the page tries to copy AT ITS SOURCE. A synthetic
+  // btn.click() has no transient user activation, so navigator.clipboard.
+  // writeText() is rejected and the system clipboard stays empty even though
+  // the button's tooltip fires. By intercepting the copy call we grab the real
+  // (unmasked) key string directly and hand it to Dart, which writes it to the
+  // system clipboard itself. Installed before the copy button is ever clicked.
+  window.__copiedKey = '';
+  function rememberCopy(t) {
+    if (typeof t !== 'string') return;
+    t = t.trim();
+    if (!t) return;
+    if (t.indexOf('sk-') !== -1) { window.__copiedKey = t; return; }
+    if (!window.__copiedKey && t.length >= 20 && t.indexOf(' ') === -1) {
+      window.__copiedKey = t;
+    }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      var _origWrite = navigator.clipboard.writeText.bind(navigator.clipboard);
+      navigator.clipboard.writeText = function(t) {
+        rememberCopy(t);
+        try { return _origWrite(t); } catch (e) { return Promise.resolve(); }
+      };
+    }
+  } catch (e) {}
+  try {
+    var _origExec = document.execCommand.bind(document);
+    document.execCommand = function(cmd) {
+      if (String(cmd).toLowerCase() === 'copy') {
+        var a = document.activeElement;
+        if (a) rememberCopy(a.value || a.textContent || '');
+        if (window.getSelection) rememberCopy(window.getSelection().toString());
+      }
+      return _origExec.apply(document, arguments);
+    };
+  } catch (e) {}
+  document.addEventListener('copy', function(e) {
+    try {
+      var d = e.clipboardData || window.clipboardData;
+      if (d && d.getData) rememberCopy(d.getData('text/plain'));
+    } catch (err) {}
+  }, true);
+
   function btnByText(texts) {
     var btns = document.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) {
@@ -288,6 +363,18 @@ class _ActivationWebViewPageState extends State<ActivationWebViewPage> {
     }
     return '';
   }
+  // The copy button (AUTO-SCRIPT.MD #6): the button whose subtree carries the
+  // lucide "copy" icon — scan all buttons and take the first match. Fall back to
+  // the tooltip-trigger selectors in case the icon class ever shifts.
+  function copyBtn() {
+    var btns = document.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      if (btns[i].querySelector('svg.lucide-copy')) return btns[i];
+    }
+    var el = document.querySelector('button[data-slot="tooltip-trigger"] svg.lucide-copy');
+    if (el) return el.closest('button');
+    return document.querySelector('button[data-slot="tooltip-trigger"]');
+  }
 
   // #4 — wait ~2s for the page to settle, then open the create-key dialog.
   setTimeout(function() {
@@ -304,17 +391,38 @@ class _ActivationWebViewPageState extends State<ActivationWebViewPage> {
           return btnByText(['保存更改', 'Save changes', 'Save']);
         }, function(saveBtn) {
           saveBtn.click();
-          // #6 — after the key is created, capture it back, then copy.
+          // #6 — wait ~5s for the key dialog to render, then click the copy
+          // button a few times (a single click can silently no-op) so the key
+          // lands on the system clipboard. Then signal Dart via KeyBridge; Dart
+          // reads the copied key back off the clipboard, saves it to the account
+          // and pops back to the app. The page-scraped key is passed along as a
+          // fallback for when the clipboard read comes back empty.
           setTimeout(function() {
-            waitFor(function() {
-              return document.querySelector('#base-ui-_r_v9_')
-                || document.querySelector('[role="dialog"] button[data-slot="tooltip-trigger"]')
-                || document.querySelector('button[data-slot="tooltip-trigger"]');
-            }, function(copyBtn) {
-              var root = document.querySelector('[role="dialog"]') || document;
-              var key = extractKey(root);
-              if (key) { try { KeyBridge.postMessage(key); } catch (e) {} }
-              copyBtn.click();
+            var pageKey = extractKey(document.querySelector('[role="dialog"]') || document)
+              || extractKey(document);
+            var keyRe = /sk-[A-Za-z0-9_\-]{20,}/;
+            waitFor(copyBtn, function(btn) {
+              var attempts = 0;
+              // Click the copy button, then verify what actually landed. A
+              // single synthetic click often no-ops (no user activation), so we
+              // keep clicking and re-checking until the copied value is a valid
+              // sk- key, then hand THAT verified key to Dart. Give up after a
+              // bounded number of tries and let Dart fall back.
+              function tryCopy() {
+                attempts++;
+                try { btn.click(); } catch (e) {}
+                setTimeout(function() {
+                  var got = window.__copiedKey || '';
+                  if (keyRe.test(got)) {
+                    try { KeyBridge.postMessage(got); } catch (e) {}
+                  } else if (attempts < 12) {
+                    tryCopy();
+                  } else {
+                    try { KeyBridge.postMessage(window.__copiedKey || pageKey); } catch (e) {}
+                  }
+                }, 1000);
+              }
+              tryCopy();
             });
           }, 5000);
         });

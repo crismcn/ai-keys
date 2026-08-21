@@ -14,6 +14,7 @@ class EmailAccount {
     this.apiKey = '',
     this.authLink = '',
     this.quota = '',
+    this.activatedAt = '',
   });
 
   final String email;
@@ -34,6 +35,11 @@ class EmailAccount {
   /// Credit/quota parsed from the activation email (e.g. `$5.800000`), empty
   /// if none was found.
   final String quota;
+
+  /// ISO-8601 timestamp of when the account became activated, used to sort the
+  /// activation records (most recent first). Empty for accounts activated
+  /// before this field existed.
+  final String activatedAt;
 
   /// Derived lifecycle state. `used` takes precedence over `activated`.
   AccountStatus get status => used
@@ -57,6 +63,7 @@ class EmailAccount {
     String? apiKey,
     String? authLink,
     String? quota,
+    String? activatedAt,
   }) =>
       EmailAccount(
         email: email,
@@ -69,6 +76,7 @@ class EmailAccount {
         apiKey: apiKey ?? this.apiKey,
         authLink: authLink ?? this.authLink,
         quota: quota ?? this.quota,
+        activatedAt: activatedAt ?? this.activatedAt,
       );
 
   Map<String, dynamic> toJson() => {
@@ -82,6 +90,7 @@ class EmailAccount {
         'apiKey': apiKey,
         'authLink': authLink,
         'quota': quota,
+        'activatedAt': activatedAt,
       };
 
   factory EmailAccount.fromJson(Map<String, dynamic> json) => EmailAccount(
@@ -95,6 +104,7 @@ class EmailAccount {
         apiKey: json['apiKey'] as String? ?? '',
         authLink: json['authLink'] as String? ?? '',
         quota: json['quota'] as String? ?? '',
+        activatedAt: json['activatedAt'] as String? ?? '',
       );
 }
 
