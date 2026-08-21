@@ -73,6 +73,18 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  void _toast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
   Future<void> _loadMore() async {
     if (_loadingMore || _visibleCount >= _filteredLength) return;
     setState(() => _loadingMore = true);
@@ -128,6 +140,66 @@ class _HomePageState extends State<HomePage> {
       ),
     );
     return result ?? false;
+  }
+
+  Future<bool> _confirmActivate(EmailAccount account) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.s.confirmActivateTitle),
+        content: Text(context.s.confirmActivateBody(account.accountName)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(context.s.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.success),
+            child: Text(context.s.activate),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Future<bool> _confirmUsed(EmailAccount account) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(context.s.confirmUsedTitle),
+        content: Text(context.s.confirmUsedBody(account.accountName)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(context.s.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.used),
+            child: Text(context.s.markUsed),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  /// Advances the account one lifecycle step on right-swipe:
+  /// inactive → activated, available → used. Used accounts don't reach here.
+  Future<void> _advanceStatus(EmailStore store, EmailAccount account) async {
+    if (account.status == AccountStatus.inactive) {
+      if (await _confirmActivate(account)) {
+        await store.markActivated(account);
+        if (mounted) _toast(context.s.activatedToast);
+      }
+    } else if (account.status == AccountStatus.available) {
+      if (await _confirmUsed(account)) {
+        await store.markUsed(account);
+        if (mounted) _toast(context.s.usedToast);
+      }
+    }
   }
 
   @override
@@ -329,10 +401,32 @@ class _HomePageState extends State<HomePage> {
           ),
         Dismissible(
           key: ValueKey(account.email),
-          direction: DismissDirection.endToStart,
-          confirmDismiss: (_) => _confirmDelete(account),
+          // Used accounts have no forward action left, so only allow delete.
+          direction: account.status == AccountStatus.used
+              ? DismissDirection.endToStart
+              : DismissDirection.horizontal,
+          confirmDismiss: (direction) async {
+            if (direction == DismissDirection.startToEnd) {
+              // Right swipe advances the lifecycle by one step. Never remove the
+              // row: on confirm we flip its state and let it snap back.
+              await _advanceStatus(store, account);
+              return false;
+            }
+            return _confirmDelete(account);
+          },
           onDismissed: (_) => store.remove(account),
           background: Container(
+            alignment: Alignment.centerLeft,
+            color: account.status == AccountStatus.inactive
+                ? AppColors.success
+                : AppColors.used,
+            padding: const EdgeInsets.only(left: 24),
+            child: const Icon(
+              Icons.check_circle_outline_rounded,
+              color: Colors.white,
+            ),
+          ),
+          secondaryBackground: Container(
             alignment: Alignment.centerRight,
             color: AppColors.danger,
             padding: const EdgeInsets.only(right: 24),

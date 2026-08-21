@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/l10n/app_strings.dart';
 import '../../core/models/email_account.dart';
@@ -38,6 +39,9 @@ class _MailDetailSheetState extends State<MailDetailSheet> {
   bool _loading = true;
   bool _error = false;
 
+  /// Renders the email's HTML body when the detail has one; null → plain text.
+  WebViewController? _webController;
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +59,14 @@ class _MailDetailSheetState extends State<MailDetailSheet> {
         messageId: widget.messageId,
       );
       if (!mounted) return;
+      // Build an HTML renderer up front so the body region can embed it. Email
+      // HTML is untrusted, so JavaScript stays disabled.
+      _webController = detail.html.trim().isNotEmpty
+          ? (WebViewController()
+              ..setJavaScriptMode(JavaScriptMode.disabled)
+              ..setBackgroundColor(context.c.surface)
+              ..loadHtmlString(_wrapHtml(detail.html)))
+          : null;
       setState(() {
         _detail = detail;
         _loading = false;
@@ -67,6 +79,43 @@ class _MailDetailSheetState extends State<MailDetailSheet> {
         _error = true;
       });
     }
+  }
+
+  /// Wraps raw email HTML in a responsive, theme-aware document so it fits the
+  /// sheet width and matches the current light/dark surface.
+  String _wrapHtml(String inner) {
+    final c = context.c;
+    String hex(Color x) =>
+        '#${(x.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
+    return '''
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+<style>
+  html, body { margin: 0; padding: 0; background: ${hex(c.surface)}; }
+  body {
+    padding: 16px;
+    color: ${hex(c.textPrimary)};
+    font-size: 15px;
+    line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      Helvetica, Arial, sans-serif;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    -webkit-text-size-adjust: 100%;
+  }
+  img { max-width: 100%; height: auto; }
+  a { color: ${hex(AppColors.primary)}; }
+  table { max-width: 100%; }
+  pre { white-space: pre-wrap; word-wrap: break-word; }
+  * { max-width: 100%; box-sizing: border-box; }
+</style>
+</head>
+<body>$inner</body>
+</html>
+''';
   }
   // _BODY_
 
@@ -152,18 +201,44 @@ class _MailDetailSheetState extends State<MailDetailSheet> {
 
   Widget _content() {
     final d = _detail!;
+    final webController = _webController;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.lg,
+            AppSpacing.md,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _senderRow(d),
+              const SizedBox(height: AppSpacing.lg),
+              _metaRow(context.s.mailTo, _addressOnly(d.to)),
+              const SizedBox(height: 6),
+              _metaRow(context.s.mailFrom, d.from),
+            ],
+          ),
+        ),
+        Divider(height: 1, color: context.c.border),
+        Expanded(
+          child: webController != null
+              ? WebViewWidget(controller: webController)
+              : _plainBody(d),
+        ),
+      ],
+    );
+  }
+
+  /// Fallback for emails with no HTML part: the plain-text body, selectable.
+  Widget _plainBody(MailDetail d) {
     final body = d.displayBody;
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
-        _senderRow(d),
-        const SizedBox(height: AppSpacing.lg),
-        _metaRow(context.s.mailTo, _addressOnly(d.to)),
-        const SizedBox(height: 6),
-        _metaRow(context.s.mailFrom, d.from),
-        const SizedBox(height: AppSpacing.lg),
-        Divider(height: 1, color: context.c.border),
-        const SizedBox(height: AppSpacing.lg),
         SelectableText(
           body.isNotEmpty ? body : context.s.mailNoBody,
           style: TextStyle(

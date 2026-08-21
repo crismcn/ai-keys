@@ -15,9 +15,9 @@ class SettingsController extends ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
   Locale get locale => _locale;
 
-  /// Active string table for [locale]. Only Simplified Chinese ships today;
-  /// additional locales just add a branch here.
-  AppStrings get strings => const AppStrings();
+  /// Active string table for [locale]. Adding a locale is just a new branch.
+  AppStrings get strings =>
+      _locale.languageCode == 'en' ? const AppStringsEn() : const AppStrings();
 
   /// Read the controller without listening — the whole tree is rebuilt by the
   /// [Consumer] wrapping `MaterialApp` when a preference changes.

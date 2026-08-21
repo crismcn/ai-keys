@@ -61,7 +61,10 @@ class EmailStore extends ChangeNotifier {
       final idx = _accounts.indexWhere(
           (a) => a.email.toLowerCase() == acc.email.toLowerCase());
       if (idx >= 0) {
-        _accounts[idx] = acc.copyWith(activated: _accounts[idx].activated);
+        _accounts[idx] = acc.copyWith(
+          activated: _accounts[idx].activated,
+          used: _accounts[idx].used,
+        );
         updated++;
       } else {
         _accounts.add(acc);
@@ -89,6 +92,16 @@ class EmailStore extends ChangeNotifier {
     final idx = _accounts.indexWhere((a) => a.email == account.email);
     if (idx >= 0) {
       _accounts[idx] = _accounts[idx].copyWith(activated: true);
+      await _persist();
+      notifyListeners();
+    }
+  }
+
+  Future<void> markUsed(EmailAccount account) async {
+    final idx = _accounts.indexWhere((a) => a.email == account.email);
+    if (idx >= 0) {
+      // "Used" implies the account was activated first.
+      _accounts[idx] = _accounts[idx].copyWith(activated: true, used: true);
       await _persist();
       notifyListeners();
     }

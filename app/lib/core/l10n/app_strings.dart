@@ -2,9 +2,9 @@ import 'package:flutter/widgets.dart';
 
 import '../settings/settings_controller.dart';
 
-/// Lightweight localization table. The base class holds Simplified Chinese
-/// (the only shipped locale for now); adding a language later is a matter of
-/// subclassing and overriding the getters (see the `zh` / future `en`).
+/// Lightweight localization table. The base class holds Simplified Chinese;
+/// [AppStringsEn] subclasses it to provide English. The active table is chosen
+/// by [SettingsController] from the current locale.
 class AppStrings {
   const AppStrings();
 
@@ -31,6 +31,7 @@ class AppStrings {
   String get emptyNoMatch => '没有匹配的邮箱';
   String get statusAvailable => '可用';
   String get statusInactive => '未激活';
+  String get statusUsed => '已使用';
   String get activate => '激活';
   String get copied => '已复制到剪贴板';
   String get loadingMore => '加载中...';
@@ -38,6 +39,13 @@ class AppStrings {
   String emailCount(int n) => '共 $n 个邮箱';
   String get confirmDeleteTitle => '删除邮箱';
   String confirmDeleteBody(String name) => '确定要删除 $name 吗？此操作不可撤销。';
+  String get confirmActivateTitle => '设为已激活';
+  String confirmActivateBody(String name) => '确定将 $name 标记为已激活状态吗？';
+  String get activatedToast => '已设为激活状态';
+  String get markUsed => '标记已使用';
+  String get confirmUsedTitle => '设为已使用';
+  String confirmUsedBody(String name) => '确定将 $name 标记为已使用状态吗？';
+  String get usedToast => '已设为已使用状态';
   String copyAccountText(String name, String password) =>
       '帐号：$name 密码：$password';
 
@@ -135,6 +143,264 @@ class AppStrings {
   // Placeholder tabs
   String comingSoon(String title) => '$title 功能即将上线';
 }
+
+/// English localization. Overrides every string in [AppStrings].
+class AppStringsEn extends AppStrings {
+  const AppStringsEn();
+
+  // Common
+  @override
+  String get appName => 'AI Mails';
+  @override
+  String get appSubtitle => 'The smartest bulk mailbox manager';
+  @override
+  String get cancel => 'Cancel';
+  @override
+  String get delete => 'Delete';
+
+  // Bottom navigation
+  @override
+  String get navEmails => 'Mailboxes';
+  @override
+  String get navActivation => 'Activations';
+  @override
+  String get navSettings => 'Settings';
+
+  // Home
+  @override
+  String get importEmail => 'Import';
+  @override
+  String get statEmailCount => 'Mailboxes';
+  @override
+  String get statTotal => 'Total';
+  @override
+  String get statActivated => 'Activated';
+  @override
+  String get statAvailable => 'Available';
+  @override
+  String get emailListTitle => 'Mailbox List';
+  @override
+  String get searchHint => 'Search email or password';
+  @override
+  String get emptyNoEmails => 'No mailboxes yet — tap Import at the top right';
+  @override
+  String get emptyNoMatch => 'No matching mailboxes';
+  @override
+  String get statusAvailable => 'Available';
+  @override
+  String get statusInactive => 'Inactive';
+  @override
+  String get statusUsed => 'Used';
+  @override
+  String get activate => 'Activate';
+  @override
+  String get copied => 'Copied to clipboard';
+  @override
+  String get loadingMore => 'Loading...';
+  @override
+  String get noMore => 'No more';
+  @override
+  String emailCount(int n) => '$n mailbox${n == 1 ? '' : 'es'}';
+  @override
+  String get confirmDeleteTitle => 'Delete Mailbox';
+  @override
+  String confirmDeleteBody(String name) =>
+      'Delete $name? This action cannot be undone.';
+  @override
+  String get confirmActivateTitle => 'Mark as Activated';
+  @override
+  String confirmActivateBody(String name) => 'Mark $name as activated?';
+  @override
+  String get activatedToast => 'Marked as activated';
+  @override
+  String get markUsed => 'Mark Used';
+  @override
+  String get confirmUsedTitle => 'Mark as Used';
+  @override
+  String confirmUsedBody(String name) => 'Mark $name as used?';
+  @override
+  String get usedToast => 'Marked as used';
+  @override
+  String copyAccountText(String name, String password) =>
+      'Account: $name Password: $password';
+  // _EN_IMPORT_
+  // Import page
+  @override
+  String get importCsvSection => 'Import CSV File';
+  @override
+  String get uploadHint => 'Tap or drag a CSV file here';
+  @override
+  String get uploadOnlyCsv => 'Only .csv format is supported';
+  @override
+  String get pasteSection => 'Or paste data';
+  @override
+  String get pasteHint =>
+      'Paste data in the following format:\n'
+      'email----password----client_id----refresh_token----created_at\n\n'
+      'user1@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00\n'
+      'user2@example.com----123456----xxxx----xxxx----2024-01-01 10:00:00';
+  @override
+  String get formatSection => 'Format';
+  @override
+  String get fieldEmail => 'Email';
+  @override
+  String get fieldEmailDesc => 'Email address';
+  @override
+  String get fieldPassword => 'Password';
+  @override
+  String get fieldPasswordDesc => 'Mailbox password';
+  @override
+  String get fieldClientId => 'client_id';
+  @override
+  String get fieldClientIdDesc => 'Client ID';
+  @override
+  String get fieldRefreshToken => 'refresh_token';
+  @override
+  String get fieldRefreshTokenDesc => 'Refresh token';
+  @override
+  String get fieldCreatedAt => 'Created At';
+  @override
+  String get fieldCreatedAtDesc => 'Created time, format: yyyy-MM-dd HH:mm:ss';
+  @override
+  String get importing => 'Importing...';
+  @override
+  String get privacyPrefix => 'By importing you agree to the ';
+  @override
+  String get privacyPolicy => 'Data Privacy Policy';
+
+  // Import success
+  @override
+  String get importSuccess => 'Import Successful';
+  @override
+  String importedCount(int n) => 'Imported $n mailbox${n == 1 ? '' : 'es'}';
+  @override
+  String get summaryAdded => 'Added';
+  @override
+  String get summaryUpdated => 'Updated';
+  @override
+  String get summaryFailed => 'Failed';
+  @override
+  String get summaryAvailable => 'Available';
+  @override
+  String get viewList => 'View Mailbox List';
+  @override
+  String get continueImport => 'Continue Importing';
+  // _EN_MAIL_
+  // Mail list
+  @override
+  String get mailListTitle => 'Mail List';
+  @override
+  String get mailLoading => 'Fetching mail...';
+  @override
+  String get mailEmpty => 'No mail';
+  @override
+  String get mailLoadError =>
+      'Failed to load mail. Check your network and retry';
+  @override
+  String get mailRetry => 'Retry';
+  @override
+  String mailCount(int n) => '$n message${n == 1 ? '' : 's'}';
+  // Mail detail
+  @override
+  String get mailFrom => 'From';
+  @override
+  String get mailTo => 'To';
+  @override
+  String get mailNoBody => 'No content';
+
+  // Activation detail
+  @override
+  String get activationTitle => 'Activation Details';
+  @override
+  String get step1Title => 'Send Verification Code';
+  @override
+  String get step1Hint => 'Sending verification code to the mailbox...';
+  @override
+  String get step1Done => 'Verification code sent';
+  @override
+  String get step2Title => 'Receive Verification Code';
+  @override
+  String get step2Hint => 'Waiting for the verification code...';
+  @override
+  String get step2Done => 'Verification code received';
+  @override
+  String get step3Title => 'Script Registration';
+  @override
+  String get step3Hint => 'Preparing to run the registration script...';
+  @override
+  String get step3Done => 'Registration complete';
+  @override
+  String get step4Title => 'Activation Verification';
+  @override
+  String get step4Hint => 'Waiting for activation verification...';
+  @override
+  String get step4Done => 'Activation verified';
+  // _EN_STEP_ERR_
+  @override
+  String get step1Error => 'Failed to send verification code, please retry';
+  @override
+  String get step2Error => 'Could not receive verification code, please retry';
+  @override
+  String get step3Error => 'Registration failed, please retry';
+  @override
+  String get step4Error => 'Could not get verification link, please retry';
+  @override
+  String get activationRetry => 'Retry';
+  @override
+  String get warnTitle => 'Do not leave this page during activation';
+  @override
+  String get warnBody =>
+      'Keep your network stable; activation may take 1-2 minutes';
+  @override
+  String get authLinkTitle => 'Activation Verification Link';
+  @override
+  String get authLinkHint =>
+      'Tap the link below and complete verification on the page that opens';
+  @override
+  String get authLinkOpen => 'Open Verification Link';
+
+  // Auth webview
+  @override
+  String get webviewTitle => 'Activation Verification';
+  @override
+  String get webviewLoadError =>
+      'Failed to load page. Check your network and retry';
+  @override
+  String get webviewRetry => 'Retry';
+  @override
+  String get webviewOpenExternal => 'Open in browser';
+
+  // Settings
+  @override
+  String get settingsTitle => 'Settings';
+  @override
+  String get sectionAppearance => 'Appearance';
+  @override
+  String get themeLight => 'Light';
+  @override
+  String get themeDark => 'Dark';
+  @override
+  String get themeSystem => 'System';
+  @override
+  String get sectionLanguage => 'Language';
+  @override
+  String get langZh => '简体中文';
+  @override
+  String get langEn => 'English';
+  @override
+  String get langEnComingSoon => 'Coming soon';
+  @override
+  String get sectionAbout => 'About';
+  @override
+  String get aboutVersion => 'Version';
+
+  // Placeholder tabs
+  @override
+  String comingSoon(String title) => '$title is coming soon';
+}
+
+
+
 
 /// Convenient access to the active string table: `context.s.importEmail`.
 extension AppStringsX on BuildContext {

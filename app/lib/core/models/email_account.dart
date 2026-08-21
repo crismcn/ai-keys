@@ -1,3 +1,6 @@
+/// Lifecycle state of an account, shown as a colored status dot.
+enum AccountStatus { inactive, available, used }
+
 /// A single imported email account.
 class EmailAccount {
   EmailAccount({
@@ -7,6 +10,7 @@ class EmailAccount {
     this.refreshToken = '',
     this.createdAt = '',
     this.activated = false,
+    this.used = false,
   });
 
   final String email;
@@ -15,6 +19,14 @@ class EmailAccount {
   final String refreshToken;
   final String createdAt;
   final bool activated;
+  final bool used;
+
+  /// Derived lifecycle state. `used` takes precedence over `activated`.
+  AccountStatus get status => used
+      ? AccountStatus.used
+      : activated
+          ? AccountStatus.available
+          : AccountStatus.inactive;
 
   /// Account name = email without the domain suffix.
   String get accountName {
@@ -25,13 +37,14 @@ class EmailAccount {
   String get initial =>
       accountName.isNotEmpty ? accountName[0].toUpperCase() : '?';
 
-  EmailAccount copyWith({bool? activated}) => EmailAccount(
+  EmailAccount copyWith({bool? activated, bool? used}) => EmailAccount(
         email: email,
         password: password,
         clientId: clientId,
         refreshToken: refreshToken,
         createdAt: createdAt,
         activated: activated ?? this.activated,
+        used: used ?? this.used,
       );
 
   Map<String, dynamic> toJson() => {
@@ -41,6 +54,7 @@ class EmailAccount {
         'refreshToken': refreshToken,
         'createdAt': createdAt,
         'activated': activated,
+        'used': used,
       };
 
   factory EmailAccount.fromJson(Map<String, dynamic> json) => EmailAccount(
@@ -50,6 +64,7 @@ class EmailAccount {
         refreshToken: json['refreshToken'] as String? ?? '',
         createdAt: json['createdAt'] as String? ?? '',
         activated: json['activated'] as bool? ?? false,
+        used: json['used'] as bool? ?? false,
       );
 }
 

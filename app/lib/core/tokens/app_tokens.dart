@@ -8,6 +8,9 @@ class AppColors {
   static const success = Color(0xFF22C55E);
   static const danger = Color(0xFFEF4444);
 
+  /// Orange-yellow (amber) — the "used" (已使用) account status.
+  static const used = Color(0xFFF59E0B);
+
   /// Lighter blue used for completed activation steps (softer than [primary]).
   static const primaryLight = Color.fromARGB(255, 89, 132, 250);
 

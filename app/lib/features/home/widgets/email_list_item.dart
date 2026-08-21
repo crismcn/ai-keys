@@ -68,14 +68,15 @@ class EmailListItem extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        StatusDot(activated: account.activated),
+                        StatusDot(status: account.status),
                       ],
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
-              if (!account.activated)
+              // Only inactive accounts can be activated; activated & used both hide it.
+              if (account.status == AccountStatus.inactive)
                 SoftPillButton(label: context.s.activate, onPressed: onActivate),
               const SizedBox(width: 2),
               Icon(Icons.chevron_right_rounded,

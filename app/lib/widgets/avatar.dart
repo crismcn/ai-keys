@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/l10n/app_strings.dart';
+import '../core/models/email_account.dart';
 import '../core/theme/app_palette.dart';
 import '../core/tokens/app_tokens.dart';
 
@@ -46,15 +47,19 @@ class LetterAvatar extends StatelessWidget {
   }
 }
 
-/// Colored status dot + label (green = 可用 / grey = 未激活).
+/// Colored status dot + label (green = 可用 / orange = 已使用 / grey = 未激活).
 class StatusDot extends StatelessWidget {
-  const StatusDot({super.key, required this.activated});
+  const StatusDot({super.key, required this.status});
 
-  final bool activated;
+  final AccountStatus status;
 
   @override
   Widget build(BuildContext context) {
-    final color = activated ? AppColors.success : context.c.neutral;
+    final (color, label) = switch (status) {
+      AccountStatus.used => (AppColors.used, context.s.statusUsed),
+      AccountStatus.available => (AppColors.success, context.s.statusAvailable),
+      AccountStatus.inactive => (context.c.neutral, context.s.statusInactive),
+    };
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -65,7 +70,7 @@ class StatusDot extends StatelessWidget {
         ),
         const SizedBox(width: 5),
         Text(
-          activated ? context.s.statusAvailable : context.s.statusInactive,
+          label,
           style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w500),
         ),
       ],

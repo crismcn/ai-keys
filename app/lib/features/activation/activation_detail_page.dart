@@ -14,6 +14,7 @@ import '../../core/tokens/app_tokens.dart';
 import '../../widgets/avatar.dart';
 import '../../widgets/confetti.dart';
 import '../../widgets/section_card.dart';
+import '../mail/mail_list_page.dart';
 import 'activation_webview_page.dart';
 
 class _Step {
@@ -192,6 +193,83 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
       );
   }
 
+  void _openMail() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MailListPage(account: widget.account),
+      ),
+    );
+  }
+
+  void _toast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
+  Future<bool> _confirm({
+    required String title,
+    required String body,
+    required String action,
+    required Color actionColor,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(context.s.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: actionColor),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  /// Swipe-left (endToStart) marks the account activated; swipe-right
+  /// (startToEnd) marks it used. Both confirm first and never remove the card.
+  Future<void> _onAccountSwipe(DismissDirection direction) async {
+    final account = widget.account;
+    final store = context.read<EmailStore>();
+    if (direction == DismissDirection.endToStart) {
+      final ok = await _confirm(
+        title: context.s.confirmActivateTitle,
+        body: context.s.confirmActivateBody(account.accountName),
+        action: context.s.activate,
+        actionColor: AppColors.success,
+      );
+      if (ok) {
+        await store.markActivated(account);
+        if (mounted) _toast(context.s.activatedToast);
+      }
+    } else {
+      final ok = await _confirm(
+        title: context.s.confirmUsedTitle,
+        body: context.s.confirmUsedBody(account.accountName),
+        action: context.s.markUsed,
+        actionColor: AppColors.used,
+      );
+      if (ok) {
+        await store.markUsed(account);
+        if (mounted) _toast(context.s.usedToast);
+      }
+    }
+  }
+
   String _fmt(int seconds) {
     final m = (seconds ~/ 60).toString().padLeft(2, '0');
     final s = (seconds % 60).toString().padLeft(2, '0');
@@ -231,31 +309,78 @@ class _ActivationDetailPageState extends State<ActivationDetailPage> {
   }
 
   Widget _accountCard(EmailAccount account) {
-    return SectionCard(
-      child: Row(
-        children: [
-          LetterAvatar(name: account.email, letter: account.initial, size: 48),
-          const SizedBox(width: AppSpacing.md),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                account.accountName,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: context.c.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                account.email,
-                style: TextStyle(fontSize: 13, color: context.c.textSecondary),
-              ),
-            ],
-          ),
-        ],
+    return Dismissible(
+      key: ValueKey('activation-account-${account.email}'),
+      confirmDismiss: (direction) async {
+        // Never dismiss: swipe just advances state, then the card snaps back.
+        await _onAccountSwipe(direction);
+        return false;
+      },
+      // startToEnd (右滑) → 已使用 (黄); endToStart (左滑) → 激活 (绿).
+      background: _swipeBackground(
+        color: AppColors.used,
+        icon: Icons.hourglass_bottom_rounded,
+        alignment: Alignment.centerLeft,
       ),
+      secondaryBackground: _swipeBackground(
+        color: AppColors.success,
+        icon: Icons.check_circle_outline_rounded,
+        alignment: Alignment.centerRight,
+      ),
+      child: SectionCard(
+        onTap: _openMail,
+        child: Row(
+          children: [
+            LetterAvatar(name: account.email, letter: account.initial, size: 48),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    account.accountName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: context.c.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    account.email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: context.c.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Icon(Icons.chevron_right_rounded, color: context.c.neutral, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _swipeBackground({
+    required Color color,
+    required IconData icon,
+    required Alignment alignment,
+  }) {
+    return Container(
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Icon(icon, color: Colors.white),
     );
   }
 
